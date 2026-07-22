@@ -126,6 +126,8 @@ export interface SessionState {
   openUserMsg: string | null;
   /** Highest event sequence applied for the current process generation. */
   lastSequence: number;
+  /** Identifier of the active HTTP prompt request, if any. */
+  activePromptRequest: { token: string; generation: number } | null;
 }
 
 export interface TerminalMeta {

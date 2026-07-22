@@ -134,6 +134,7 @@ function emptySession(summary: SessionSummary): SessionState {
     openThoughtMsg: null,
     openUserMsg: null,
     lastSequence: 0,
+    activePromptRequest: null,
   };
 }
 
@@ -505,16 +506,30 @@ export async function sendPrompt(sessionId: string, text: string, attachments: A
 
   const id = `m${++msgSeq}`;
   const msg: ChatMessage = { id, role: "user", text, attachments, streaming: false, ts: Date.now() };
+  const token = crypto.randomUUID();
+  const generation = s.processGeneration;
+
   updateSession(sessionId, (d) => {
     closeOpenMessages(d);
     d.messages = { ...d.messages, [id]: msg };
     d.timeline = [...d.timeline, { kind: "message", id }];
     d.running = true;
+    d.activePromptRequest = { token, generation };
   });
 
   try {
     await api.prompt(sessionId, blocks);
   } catch (err) {
+    const current = state.sessions[sessionId];
+    const isCurrent =
+      current?.processGeneration === generation &&
+      current.activePromptRequest?.token === token;
+
+    if (!isCurrent) {
+      // This response belongs to a replaced generation; ignore it.
+      return;
+    }
+
     const eid = `m${++msgSeq}`;
     updateSession(sessionId, (d) => {
       closeOpenMessages(d);
@@ -531,7 +546,15 @@ export async function sendPrompt(sessionId: string, text: string, attachments: A
       };
       d.timeline = [...d.timeline, { kind: "message", id: eid }];
       d.running = false;
+      d.activePromptRequest = null;
     });
+  } finally {
+    const current = state.sessions[sessionId];
+    if (current?.activePromptRequest?.token === token) {
+      updateSession(sessionId, (d) => {
+        d.activePromptRequest = null;
+      });
+    }
   }
 }
 

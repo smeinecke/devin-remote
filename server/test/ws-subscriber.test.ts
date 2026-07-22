@@ -54,4 +54,45 @@ describe("WsSubscriber", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await wait(50);
   });
+
+  it("delivers live generation-2 events after recovering from a stale generation subscription", async () => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const { port } = server.address() as { port: number };
+
+    const registry = new SessionRegistry();
+    const controller = registry.getOrCreate("s1", "/tmp");
+    controller.processGeneration = 2;
+    controller.status = "idle";
+
+    const subscriber = new WsSubscriber(
+      server,
+      registry,
+      registry.eventBus,
+      () => ({ type: "config", app: { name: "devin-remote", version: "0" }, settings: {} } as any),
+    );
+
+    const ws = new WebSocket(`ws://localhost:${port}/ws`);
+    const messages: any[] = [];
+    ws.on("message", (data) => messages.push(JSON.parse(String(data))));
+    await once(ws, "open");
+    await wait(50);
+
+    // Subscribe using stale generation 1.
+    ws.send(JSON.stringify({ type: "subscribe", sessions: { s1: { processGeneration: 1, after: 0 } } }));
+    await wait(150);
+
+    // Emit a live event on generation 2.
+    registry.eventBus.emit("s1", 2, "session_update", { text: "live" });
+    await wait(150);
+
+    const live = messages.find((m) => m.type === "event" && m.processGeneration === 2);
+    assert.ok(live, "expected a generation-2 event to be delivered");
+    assert.strictEqual(live.eventType, "session_update");
+
+    ws.terminate();
+    (subscriber as any).wss.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await wait(50);
+  });
 });

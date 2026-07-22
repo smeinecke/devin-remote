@@ -205,4 +205,64 @@ describe("SessionController", () => {
     // Only one prompt_done event should have been emitted, for generation 2.
     assert.deepStrictEqual(promptDoneGenerations, [2]);
   });
+
+  it("preserves activeOperation for the replacement prompt when a stale prompt settles", async () => {
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, new EventBus(), {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    // Start prompt A in generation 1.
+    const promptA = c.prompt([{ type: "text", text: "a" }]);
+    const opA = c.snapshot().activeOperation;
+    assert.match(opA ?? "", /^prompt-/);
+
+    // Replace with generation 2 and start prompt B.
+    c.status = "failed";
+    await c.attach(makeFactory(processes));
+    const promptB = c.prompt([{ type: "text", text: "b" }]);
+    const opB = c.snapshot().activeOperation;
+    assert.match(opB ?? "", /^prompt-/);
+
+    // Settle the stale generation-1 prompt.
+    processes[0].resolvePrompt({ result: "A" });
+    await promptA.catch(() => {});
+
+    // activeOperation should still refer to prompt B.
+    assert.strictEqual(c.snapshot().activeOperation, opB);
+
+    // Clean up B.
+    processes[1].resolvePrompt({ result: "B" });
+    await promptB;
+  });
+
+  it("transitions to failed when the ACP factory rejects and allows a second attach", async () => {
+    const bus = new EventBus();
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, bus, {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+
+    let attempts = 0;
+    const failingFactory = async (_cwd: string, generation: number, cbs: any) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("factory failed");
+      }
+      const p = new FakeAcpProcess(`s-${generation}`, cbs);
+      return p as any;
+    };
+
+    c.status = "failed";
+    await assert.rejects(() => c.attach(failingFactory), /factory failed/);
+    assert.strictEqual(c.status, "failed");
+
+    await c.attach(failingFactory);
+    assert.strictEqual(c.status, "idle");
+  });
 });

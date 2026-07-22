@@ -59,7 +59,7 @@ export class SessionController {
   status: SessionStatus = "starting";
   private acp: AcpProcess | null = null;
   private loadingPromise: Promise<void> | null = null;
-  private activeOperation?: string;
+  private activeOperation: { token: symbol; generation: number; kind: "prompt" | "cancel" | "attach"; name: string } | undefined;
   private activePrompt: { token: symbol; generation: number; process: AcpProcess; promise: Promise<acp.PromptResponse> } | null = null;
   private pendingPermissions = new Map<string, PermissionRequest>();
   private metadata: SessionMetadata;
@@ -151,7 +151,7 @@ export class SessionController {
       title: this.title,
       cwd: this.cwd,
       branch: this.branch,
-      activeOperation: this.activeOperation,
+      activeOperation: this.activeOperation?.name,
       pendingPermissions: [...this.pendingPermissions.values()],
       running: this.isRunning,
       latestSequence: this.eventBus.latestSequence(this.sessionId, this.processGeneration) ?? 0,
@@ -171,7 +171,7 @@ export class SessionController {
   }
 
   private emitStateChange(previous: SessionStatus, next: SessionStatus) {
-    this.eventBus.emit(this.sessionId, this.processGeneration, "state_change", { previous, next, activeOperation: this.activeOperation });
+    this.eventBus.emit(this.sessionId, this.processGeneration, "state_change", { previous, next, activeOperation: this.activeOperation?.name });
   }
 
   /** Idempotent attach for an existing session (load or resume). */
@@ -237,54 +237,55 @@ export class SessionController {
         oldAcp.terminate().catch((err) => console.error("failed to terminate old acp:", err));
       }
 
-      const acp = await factory(this.cwd, gen, {
-        onSessionUpdate: (u: acp.SessionNotification) => {
-          if (gen !== this.processGeneration) return;
-          this.handleSessionUpdate(u);
-        },
-        onAgentLog: (channel: string, message: string, level: string) => {
-          if (gen !== this.processGeneration) return;
-          this.handleAgentLog(channel, message, level);
-        },
-        onPermissionRequest: (requestId: string, toolCall: unknown, options: PermissionRequest["options"]) => {
-          if (gen !== this.processGeneration) return;
-          this.handlePermissionRequest(requestId, toolCall, options);
-        },
-        onPermissionResolved: (requestId: string) => {
-          if (gen !== this.processGeneration) return;
-          this.handlePermissionResolved(requestId);
-        },
-        onTerminalOutput: (terminalId: string, data: string) => {
-          if (gen !== this.processGeneration) return;
-          this.handleTerminalOutput(terminalId, data);
-        },
-        onTerminalExit: (terminalId: string, exitCode: number | null, signal: string | null) => {
-          if (gen !== this.processGeneration) return;
-          this.handleTerminalExit(terminalId, exitCode, signal);
-        },
-        onExit: (code: number | null) => {
-          if (gen !== this.processGeneration) return;
-          this.handleAcpExit(code);
-        },
-      });
-
-      if (gen !== this.processGeneration) {
-        acp.kill();
-        throw new Error("process generation changed during start");
-      }
-
-      this.acp = acp;
-
+      let acp: AcpProcess | null = null;
       try {
+        acp = await factory(this.cwd, gen, {
+          onSessionUpdate: (u: acp.SessionNotification) => {
+            if (gen !== this.processGeneration) return;
+            this.handleSessionUpdate(u);
+          },
+          onAgentLog: (channel: string, message: string, level: string) => {
+            if (gen !== this.processGeneration) return;
+            this.handleAgentLog(channel, message, level);
+          },
+          onPermissionRequest: (requestId: string, toolCall: unknown, options: PermissionRequest["options"]) => {
+            if (gen !== this.processGeneration) return;
+            this.handlePermissionRequest(requestId, toolCall, options);
+          },
+          onPermissionResolved: (requestId: string) => {
+            if (gen !== this.processGeneration) return;
+            this.handlePermissionResolved(requestId);
+          },
+          onTerminalOutput: (terminalId: string, data: string) => {
+            if (gen !== this.processGeneration) return;
+            this.handleTerminalOutput(terminalId, data);
+          },
+          onTerminalExit: (terminalId: string, exitCode: number | null, signal: string | null) => {
+            if (gen !== this.processGeneration) return;
+            this.handleTerminalExit(terminalId, exitCode, signal);
+          },
+          onExit: (code: number | null) => {
+            if (gen !== this.processGeneration) return;
+            this.handleAcpExit(code);
+          },
+        });
+
+        if (gen !== this.processGeneration) {
+          acp.kill();
+          throw new Error("process generation changed during start");
+        }
+
+        this.acp = acp;
         await init(acp);
+        this.transition("loadComplete");
+        this.metadata.updatedAt = Date.now();
       } catch (err) {
-        acp.kill();
-        this.transition("fail");
+        acp?.kill();
+        if (gen === this.processGeneration && this.status === "loading") {
+          this.transition("fail");
+        }
         throw err;
       }
-
-      this.transition("loadComplete");
-      this.metadata.updatedAt = Date.now();
     })();
 
     try {
@@ -303,12 +304,12 @@ export class SessionController {
       throw new Error("session process unavailable");
     }
 
-    this.activeOperation = `prompt-${Date.now()}`;
+    const generation = this.processGeneration;
+    const token = Symbol("prompt");
+    this.activeOperation = { token, generation, kind: "prompt", name: `prompt-${Date.now()}` };
     this.emitStateChange(this.status, this.status);
 
     const process = this.acp;
-    const generation = this.processGeneration;
-    const token = Symbol("prompt");
     const promise = process.prompt(blocks);
     this.activePrompt = { token, generation, process, promise };
 
@@ -316,6 +317,10 @@ export class SessionController {
       this.processGeneration === generation &&
       this.acp === process &&
       this.activePrompt?.token === token;
+
+    const isOpCurrent = () =>
+      this.activeOperation?.token === token &&
+      this.activeOperation?.generation === generation;
 
     try {
       const result = await promise;
@@ -326,7 +331,6 @@ export class SessionController {
         this.transition("complete");
       }
       this.eventBus.emit(this.sessionId, generation, "prompt_done", { result });
-      this.activeOperation = undefined;
       this.metadata.updatedAt = Date.now();
       return result;
     } catch (err) {
@@ -337,11 +341,13 @@ export class SessionController {
           this.transition("fail");
         }
       }
-      this.activeOperation = undefined;
       throw err;
     } finally {
       if (this.activePrompt?.token === token) {
         this.activePrompt = null;
+      }
+      if (isOpCurrent()) {
+        this.activeOperation = undefined;
       }
     }
   }
@@ -350,10 +356,15 @@ export class SessionController {
     const t = this.transition("cancel");
     if (!t.ok) throw Object.assign(new Error(t.message), { status: t.status });
 
-    this.activeOperation = `cancel-${Date.now()}`;
+    const generation = this.processGeneration;
+    const token = Symbol("cancel");
+    this.activeOperation = { token, generation, kind: "cancel", name: `cancel-${Date.now()}` };
     this.emitStateChange(this.status, this.status);
 
     const CANCEL_TIMEOUT_MS = 5000;
+    const isOpCurrent = () =>
+      this.activeOperation?.token === token &&
+      this.activeOperation?.generation === generation;
 
     try {
       await this.acp?.cancel();
@@ -370,7 +381,9 @@ export class SessionController {
       this.transition("fail");
       this.acp?.kill();
     } finally {
-      this.activeOperation = undefined;
+      if (isOpCurrent()) {
+        this.activeOperation = undefined;
+      }
     }
   }
 
@@ -419,7 +432,7 @@ export class SessionController {
 
   private handleSessionUpdate(update: acp.SessionNotification) {
     // Reflect running state when the agent sends non-final updates.
-    if (this.status === "idle" && this.activeOperation?.startsWith("prompt-")) {
+    if (this.status === "idle" && this.activeOperation?.kind === "prompt") {
       this.transition("prompt");
     }
     this.eventBus.emit(this.sessionId, this.processGeneration, "session_update", update);
