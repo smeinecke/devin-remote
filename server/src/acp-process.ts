@@ -266,7 +266,7 @@ export class AcpProcess {
   }
 
   /** Send SIGTERM, wait, then SIGKILL until the process exits. */
-  async terminate(timeoutMs = 5000): Promise<void> {
+  async terminate(timeoutMs = 5000, postKillTimeoutMs = 2000): Promise<void> {
     if (this.exited) return;
     this.kill();
     const deadline = Date.now() + timeoutMs;
@@ -279,8 +279,12 @@ export class AcpProcess {
       } catch {
         /* already dead */
       }
-      while (!this.exited) {
+      const postKillDeadline = Date.now() + postKillTimeoutMs;
+      while (!this.exited && Date.now() < postKillDeadline) {
         await new Promise((r) => setTimeout(r, 50));
+      }
+      if (!this.exited) {
+        throw new Error("ACP process did not report exit after SIGKILL");
       }
     }
   }

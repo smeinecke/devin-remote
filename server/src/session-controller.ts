@@ -60,7 +60,7 @@ export class SessionController {
   private acp: AcpProcess | null = null;
   private loadingPromise: Promise<void> | null = null;
   private activeOperation?: string;
-  private activePrompt: Promise<acp.PromptResponse> | null = null;
+  private activePrompt: { token: symbol; generation: number; process: AcpProcess; promise: Promise<acp.PromptResponse> } | null = null;
   private pendingPermissions = new Map<string, PermissionRequest>();
   private metadata: SessionMetadata;
   private eventBus: EventBus;
@@ -306,26 +306,43 @@ export class SessionController {
     this.activeOperation = `prompt-${Date.now()}`;
     this.emitStateChange(this.status, this.status);
 
-    this.activePrompt = this.acp.prompt(blocks);
+    const process = this.acp;
+    const generation = this.processGeneration;
+    const token = Symbol("prompt");
+    const promise = process.prompt(blocks);
+    this.activePrompt = { token, generation, process, promise };
+
+    const isCurrent = () =>
+      this.processGeneration === generation &&
+      this.acp === process &&
+      this.activePrompt?.token === token;
+
     try {
-      const result = await this.activePrompt;
+      const result = await promise;
+      if (!isCurrent()) {
+        throw new Error("stale prompt completion");
+      }
       if (this.status === "running" || this.status === "waiting_for_permission" || this.status === "cancelling") {
         this.transition("complete");
       }
-      this.eventBus.emit(this.sessionId, this.processGeneration, "prompt_done", { result });
+      this.eventBus.emit(this.sessionId, generation, "prompt_done", { result });
       this.activeOperation = undefined;
       this.metadata.updatedAt = Date.now();
       return result;
     } catch (err) {
-      if (this.status === "cancelling") {
-        this.transition("complete");
-      } else if (this.status === "running" || this.status === "waiting_for_permission") {
-        this.transition("fail");
+      if (isCurrent()) {
+        if (this.status === "cancelling") {
+          this.transition("complete");
+        } else if (this.status === "running" || this.status === "waiting_for_permission") {
+          this.transition("fail");
+        }
       }
       this.activeOperation = undefined;
       throw err;
     } finally {
-      this.activePrompt = null;
+      if (this.activePrompt?.token === token) {
+        this.activePrompt = null;
+      }
     }
   }
 
@@ -343,7 +360,7 @@ export class SessionController {
 
       if (this.activePrompt) {
         await Promise.race([
-          this.activePrompt.catch(() => {}),
+          this.activePrompt.promise.catch(() => {}),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("cancel timed out")), CANCEL_TIMEOUT_MS)),
         ]);
       }

@@ -61,19 +61,27 @@ export class WsSubscriber {
           if (msg.type === "subscribe" && msg.sessions && !Array.isArray(msg.sessions)) {
             for (const [sessionId, cursor] of Object.entries(msg.sessions)) {
               const controller = this.registry.get(sessionId);
-              const processGeneration = cursor.processGeneration ?? controller?.processGeneration ?? 0;
-              client.subscriptions.set(sessionId, { processGeneration, after: cursor.after ?? 0 });
+              const requestedGeneration = cursor.processGeneration ?? 0;
+              const currentGeneration = controller?.processGeneration ?? requestedGeneration;
 
-              // Replay from the cursor or send a snapshot.
-              const replay = this.eventBus.replay(sessionId, processGeneration, cursor.after ?? 0);
-              if (replay === undefined) {
-                const snapshot = this.eventBus.snapshot(sessionId, processGeneration, controller?.snapshot() ?? null);
-                ws.send(JSON.stringify(snapshot));
-              } else {
-                for (const ev of replay) {
-                  ws.send(JSON.stringify(toEnvelope(ev)));
-                }
+              // If the client is subscribing to an obsolete generation, notify
+              // it with a top-level control message and subscribe to the current
+              // generation instead. Do not rely on the old event buffer still
+              // containing the generation_changed event.
+              if (controller && requestedGeneration !== currentGeneration) {
+                client.subscriptions.set(sessionId, { processGeneration: currentGeneration, after: 0 });
+                ws.send(JSON.stringify({
+                  type: "generation_changed",
+                  sessionId,
+                  previousGeneration: requestedGeneration,
+                  processGeneration: currentGeneration,
+                }));
+                this.replayOrSnapshot(ws, sessionId, currentGeneration, 0, controller);
+                continue;
               }
+
+              client.subscriptions.set(sessionId, { processGeneration: currentGeneration, after: cursor.after ?? 0 });
+              this.replayOrSnapshot(ws, sessionId, currentGeneration, cursor.after ?? 0, controller);
             }
           }
           if (msg.type === "unsubscribe" && Array.isArray(msg.sessions)) {
@@ -121,6 +129,18 @@ export class WsSubscriber {
       if (sub.processGeneration !== envelope.processGeneration) continue;
       if (sub.after >= envelope.sequence) continue;
       client.ws.send(msg);
+    }
+  }
+
+  private replayOrSnapshot(ws: WebSocket, sessionId: string, processGeneration: number, after: number, controller: { snapshot(): unknown } | undefined) {
+    const replay = this.eventBus.replay(sessionId, processGeneration, after);
+    if (replay === undefined) {
+      const snapshot = this.eventBus.snapshot(sessionId, processGeneration, controller?.snapshot() ?? null);
+      ws.send(JSON.stringify(snapshot));
+    } else {
+      for (const ev of replay) {
+        ws.send(JSON.stringify(toEnvelope(ev)));
+      }
     }
   }
 

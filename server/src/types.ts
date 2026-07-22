@@ -97,4 +97,11 @@ export interface SnapshotEnvelope {
   events: ServerEventEnvelope[];
 }
 
-export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | { type: "config"; app: { name: string; version: string }; settings: StoreShape["settings"] };
+export interface GenerationChangedEnvelope {
+  type: "generation_changed";
+  sessionId: string;
+  previousGeneration: number;
+  processGeneration: number;
+}
+
+export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | GenerationChangedEnvelope | { type: "config"; app: { name: string; version: string }; settings: StoreShape["settings"] };

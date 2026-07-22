@@ -22,6 +22,7 @@ import type {
   PromptBlock,
   ServerEventEnvelope,
   SnapshotEnvelope,
+  GenerationChangedEnvelope,
   WsConfigEvent,
   WsServerEvent,
   MessageChunkUpdate,
@@ -647,6 +648,12 @@ export function dispatchEvent(ev: WsServerEvent): void {
     return;
   }
 
+  if (ev.type === "generation_changed") {
+    const g = ev as GenerationChangedEnvelope;
+    handleGenerationChanged(g.sessionId, g.previousGeneration, g.processGeneration);
+    return;
+  }
+
   if (ev.type === "snapshot") {
     const s = ev as SnapshotEnvelope;
     // Only treat the snapshot as a full replacement when the server explicitly
@@ -664,9 +671,12 @@ export function dispatchEvent(ev: WsServerEvent): void {
       updatedAt: null,
     });
     updateSession(s.sessionId, (d) => {
+      const generationChanged = d.processGeneration !== s.processGeneration;
       d.processGeneration = s.processGeneration;
-      if (replacing) {
+      if (replacing || generationChanged) {
         d.lastSequence = 0;
+      }
+      if (replacing) {
         d.timeline = [];
         d.messages = {};
         d.toolCalls = {};
@@ -689,40 +699,44 @@ export function dispatchEvent(ev: WsServerEvent): void {
   }
 }
 
+function handleGenerationChanged(sessionId: string, previousGeneration: number, processGeneration: number): void {
+  ensureSession({
+    sessionId,
+    cwd: state.sessions[sessionId] ? "" : state.meta?.primaryCwd ?? "",
+    title: null,
+    alias: null,
+    branch: null,
+    worktree: null,
+    updatedAt: null,
+  });
+  updateSession(sessionId, (d) => {
+    d.processGeneration = processGeneration;
+    d.lastSequence = 0;
+    d.running = false;
+    d.permissions = [];
+    d.openAgentMsg = null;
+    d.openThoughtMsg = null;
+    d.openUserMsg = null;
+    d.status = "loading";
+  });
+  // Drop terminal metadata and buffers belonging to the replaced generation.
+  const nextTerminals: Record<string, TerminalMeta> = {};
+  for (const [id, meta] of Object.entries(state.terminals)) {
+    if (meta.sessionId === sessionId && meta.processGeneration === previousGeneration) {
+      termBuffers.delete(id);
+    } else {
+      nextTerminals[id] = meta;
+    }
+  }
+  setState({ terminals: nextTerminals });
+  subscribeSession(sessionId, processGeneration, 0);
+}
+
 function applyEventEnvelope(ev: ServerEventEnvelope): void {
   const { sessionId, processGeneration, eventType, payload } = ev;
   if (eventType === "generation_changed") {
     const p = payload as { previousGeneration: number; processGeneration: number };
-    ensureSession({
-      sessionId,
-      cwd: state.sessions[sessionId] ? "" : state.meta?.primaryCwd ?? "",
-      title: null,
-      alias: null,
-      branch: null,
-      worktree: null,
-      updatedAt: null,
-    });
-    updateSession(sessionId, (d) => {
-      d.processGeneration = p.processGeneration;
-      d.lastSequence = 0;
-      d.running = false;
-      d.permissions = [];
-      d.openAgentMsg = null;
-      d.openThoughtMsg = null;
-      d.openUserMsg = null;
-      d.status = "loading";
-    });
-    // Drop terminal metadata and buffers belonging to the replaced generation.
-    const nextTerminals: Record<string, TerminalMeta> = {};
-    for (const [id, meta] of Object.entries(state.terminals)) {
-      if (meta.sessionId === sessionId && meta.processGeneration === p.previousGeneration) {
-        termBuffers.delete(id);
-      } else {
-        nextTerminals[id] = meta;
-      }
-    }
-    setState({ terminals: nextTerminals });
-    subscribeSession(sessionId, p.processGeneration, 0);
+    handleGenerationChanged(sessionId, p.previousGeneration, p.processGeneration);
     return;
   }
   const session = state.sessions[sessionId];

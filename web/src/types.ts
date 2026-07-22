@@ -261,7 +261,14 @@ export interface WsConfigEvent {
   settings: Settings;
 }
 
-export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | WsConfigEvent;
+export interface GenerationChangedEnvelope {
+  type: "generation_changed";
+  sessionId: string;
+  previousGeneration: number;
+  processGeneration: number;
+}
+
+export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | GenerationChangedEnvelope | WsConfigEvent;
 
 // ---- REST payloads --------------------------------------------------------
 

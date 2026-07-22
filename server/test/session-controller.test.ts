@@ -157,4 +157,52 @@ describe("SessionController", () => {
     processes[0].rejectPrompt(new Error("cancelled"));
     await promptP.catch(() => {});
   });
+
+  it("does not let a stale prompt completion corrupt the replacement generation", async () => {
+    const bus = new EventBus();
+    const promptDoneGenerations: number[] = [];
+    bus.subscribe((_sid, env) => {
+      if (env.type === "event" && (env as any).eventType === "prompt_done") {
+        promptDoneGenerations.push((env as any).processGeneration);
+      }
+    });
+
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, bus, {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    // Start prompt A in generation 1.
+    const promptA = c.prompt([{ type: "text", text: "a" }]);
+    assert.strictEqual(c.status, "running");
+
+    // Simulate a replacement: move to failed and attach generation 2.
+    c.status = "failed";
+    await c.attach(makeFactory(processes));
+    assert.strictEqual(c.processGeneration, 2);
+
+    // Start prompt B in generation 2.
+    const promptB = c.prompt([{ type: "text", text: "b" }]);
+    assert.strictEqual(c.status, "running");
+
+    // Resolve the stale generation-1 prompt.
+    processes[0].resolvePrompt({ result: "A" });
+    await assert.rejects(() => promptA, /stale prompt completion/);
+
+    // Generation 2 should still be running and tracking prompt B.
+    assert.strictEqual(c.status, "running");
+
+    // Resolve generation-2 prompt.
+    processes[1].resolvePrompt({ result: "B" });
+    const resultB = await promptB;
+    assert.strictEqual(resultB.result, "B");
+    assert.strictEqual(c.status, "idle");
+
+    // Only one prompt_done event should have been emitted, for generation 2.
+    assert.deepStrictEqual(promptDoneGenerations, [2]);
+  });
 });
