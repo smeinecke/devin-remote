@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { getTerminalOutput, setUi, useStore } from "../state";
+import { sendTerminalInput, sendTerminalResize } from "../ws";
 import { cn } from "@/lib/utils";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { SquareTerminalIcon, XIcon } from "lucide-react";
@@ -31,11 +32,29 @@ const XTERM_THEME = {
   brightWhite: "#ffffff",
 };
 
-function XTermView({ id, version, resetSeq }: { id: string; version: number; resetSeq: number }) {
+function XTermView({
+  id,
+  version,
+  resetSeq,
+  sessionId,
+  exited,
+}: {
+  id: string;
+  version: number;
+  resetSeq: number;
+  sessionId: string;
+  exited: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const writtenRef = useRef(0);
   const resetRef = useRef(resetSeq);
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wsConnected = useStore((s) => s.wsConnected);
+
+  const sendResize = (term: Terminal) => {
+    if (!exited) sendTerminalResize(id, term.cols, term.rows, sessionId);
+  };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -45,20 +64,32 @@ function XTermView({ id, version, resetSeq }: { id: string; version: number; res
       fontFamily: '"Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       theme: XTERM_THEME,
       scrollback: 10000,
-      disableStdin: true,
-      convertEol: false, // output already contains \r\n / ANSI — pass through
+      disableStdin: false,
+      convertEol: false,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host);
     fit.fit();
+    term.focus();
     termRef.current = term;
     writtenRef.current = 0;
+
     const existing = getTerminalOutput(id);
     if (existing) {
       term.write(existing);
       writtenRef.current = existing.length;
     }
+
+    const inputDispose = term.onData((data) => {
+      if (!exited) sendTerminalInput(id, data, sessionId);
+    });
+
+    const resizeDispose = term.onResize(() => {
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = setTimeout(() => sendResize(term), 100);
+    });
+
     const ro = new ResizeObserver(() => {
       try {
         fit.fit();
@@ -67,18 +98,29 @@ function XTermView({ id, version, resetSeq }: { id: string; version: number; res
       }
     });
     ro.observe(host);
+
+    host.addEventListener("click", () => term.focus());
+
     return () => {
+      if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
       ro.disconnect();
+      inputDispose.dispose();
+      resizeDispose.dispose();
       term.dispose();
       termRef.current = null;
     };
   }, [id]);
 
+  // When the WebSocket reconnects, re-send the current PTY size.
+  useEffect(() => {
+    const term = termRef.current;
+    if (term && wsConnected) sendResize(term);
+  }, [wsConnected, id, sessionId]);
+
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
     if (resetRef.current !== resetSeq) {
-      // Server-side buffer was trimmed — restart from the trimmed snapshot.
       resetRef.current = resetSeq;
       term.reset();
       writtenRef.current = 0;
@@ -91,7 +133,26 @@ function XTermView({ id, version, resetSeq }: { id: string; version: number; res
     }
   }, [id, version, resetSeq]);
 
-  return <div className="min-h-0 flex-1 px-2 py-1.5 [&_.xterm]:h-full" ref={hostRef} />;
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.disableStdin = exited;
+    if (exited) {
+      term.blur();
+    } else {
+      term.focus();
+    }
+  }, [exited]);
+
+  return (
+    <div className="relative min-h-0 flex-1 px-2 py-1.5 [&_.xterm]:h-full" ref={hostRef}>
+      {exited && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-center bg-card/80 py-1 text-[10px] font-medium text-muted-foreground backdrop-blur-sm">
+          Process exited — input disabled
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function TerminalPanel() {
@@ -155,7 +216,13 @@ export default function TerminalPanel() {
         </TooltipIconButton>
       </div>
       {selected ? (
-        <XTermView id={selected.id} version={selected.version} resetSeq={selected.resetSeq} />
+        <XTermView
+          id={selected.id}
+          version={selected.version}
+          resetSeq={selected.resetSeq}
+          sessionId={selected.sessionId}
+          exited={selected.exitCode !== null || selected.signal !== null}
+        />
       ) : (
         <div className="flex-1" />
       )}

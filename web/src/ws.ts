@@ -11,6 +11,20 @@ function wsUrl(): string {
   return `${proto}//${location.host}/ws`;
 }
 
+function sendMessage(payload: { type: string; [key: string]: unknown }) {
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(payload));
+  }
+}
+
+export function sendTerminalInput(terminalId: string, data: string, sessionId?: string | null) {
+  sendMessage({ type: "terminal_input", terminalId, data, sessionId: sessionId ?? undefined });
+}
+
+export function sendTerminalResize(terminalId: string, cols: number, rows: number, sessionId?: string | null) {
+  sendMessage({ type: "terminal_resize", terminalId, cols, rows, sessionId: sessionId ?? undefined });
+}
+
 /** Start the single WS client with auto-reconnect (exponential backoff). Idempotent. */
 export function startWs(): void {
   if (started) return;

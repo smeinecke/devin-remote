@@ -84,6 +84,15 @@ Then open http://127.0.0.1:7781 — that's it.
 ## Requirements
 
 - Node.js ≥ 20
+- Linux, macOS, or WSL (Windows is not yet tested or supported)
+- Python 3 and a C++ compiler for `node-pty` (the `preinstall` script will warn
+  if they are missing):
+
+```bash
+# Debian / Ubuntu
+sudo apt-get install -y build-essential python3
+```
+
 - [Devin CLI](https://docs.devin.ai/cli) installed and authenticated:
 
 ```bash
@@ -136,18 +145,26 @@ DEVIN_REMOTE_ALLOWED_HOSTS=devin.example.com,machine.tailnet-name.ts.net npx dev
 Uploads are served with `nosniff` (and a neutering CSP for SVG), the upload
 body is capped at 25 MiB, and file access is confined to the workspace.
 
+**Terminals are interactive.** Any browser tab that can reach Devin Remote can
+send keystrokes to agent-spawned PTYs and run commands with the privileges of
+the OS account running `devin-remote`. The server binds to loopback by default
+and terminal input is never logged.
+
 ## How it works
 
 ```
 browser (React SPA) ──REST/WS──> devin-remote server ──stdio JSON-RPC (ACP)──> devin acp ──> Devin
+                              │
+                              └── node-pty ──> interactive shell commands
 ```
 
 Devin Remote spawns one `devin acp` process per workspace directory and speaks
 the [Agent Client Protocol](https://agentclientprotocol.com) over stdio — the
 same protocol Zed uses to embed coding agents. Session updates stream to the
 browser over a WebSocket; your actions (prompts, permission decisions, mode and
-model changes) go back over REST. No database, no native modules, no cloud
-relay.
+model changes) go back over REST. Agent-spawned terminals run through
+`node-pty` so the browser can drive interactive programs (`vim`, `less`, REPLs,
+password prompts). No database, no cloud relay.
 
 ## Development
 
@@ -162,17 +179,17 @@ npm run dev        # server on :7781 (tsx watch) + web on :5173 (vite)
 npm run build      # web → dist/web, server → dist/server
 npm start          # production server serving dist/web
 npm run typecheck  # tsc, both projects
+npm test           # server unit/integration tests (requires node-pty build deps)
 npm run smoke      # end-to-end ACP smoke test against your devin CLI
 ```
 
-Stack: Node + TypeScript server (`@agentclientprotocol/sdk`, `ws`, `fflate`),
-React + Vite frontend ([assistant-ui](https://www.assistant-ui.com/), Tailwind
-v4, KaTeX, Mermaid, xterm.js).
+Stack: Node + TypeScript server (`@agentclientprotocol/sdk`, `ws`, `node-pty`,
+`fflate`), React + Vite frontend ([assistant-ui](https://www.assistant-ui.com/),
+Tailwind v4, KaTeX, Mermaid, xterm.js).
 
 ## Roadmap
 
 - Token authentication for `--host` exposure
-- Interactive terminal input
 - Devin Cloud (remote) sessions
 - Windows support (today: macOS, Linux, WSL)
 

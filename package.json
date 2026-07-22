@@ -9,7 +9,8 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "scripts/check-native-build.mjs"
   ],
   "engines": {
     "node": ">=20"
@@ -19,11 +20,13 @@
     "dev:server": "tsx watch server/src/index.ts",
     "dev:web": "vite",
     "build": "npm run build:web && npm run build:server",
+    "preinstall": "node scripts/check-native-build.mjs",
     "build:web": "vite build && node scripts/compress.mjs",
     "build:server": "tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
     "smoke": "tsx scripts/smoke.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "tsx --test 'server/src/**/*.test.ts'",
+    "typecheck": "tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.server.test.json && tsc --noEmit -p tsconfig.web.json",
     "prepack": "npm run build"
   },
   "keywords": [
@@ -45,6 +48,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.2.1",
     "fflate": "^0.8.2",
+    "node-pty": "^1.1.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

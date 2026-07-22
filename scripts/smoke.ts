@@ -34,7 +34,11 @@ const manager = new AcpManager({
   },
   onPermissionOwner: () => {},
   onPermissionResolved: (id) => console.log(`  [permission] ${id} resolved without client`),
-  onTerminalOutput: () => {},
+  onTerminalOutput: (id, _sid, data) => {
+    // Print non-control output for smoke visibility.
+    const visible = data.replace(/\x1b\[[\d;?]*[A-Za-z]/g, "").replace(/\r\n/g, "\n");
+    if (visible.trim()) console.log(`  [terminal ${id}] ${visible.trim()}`);
+  },
   onTerminalExit: (id, _sid, code) => console.log(`  [terminal ${id}] exit=${code}`),
   onExit: (cwd, code) => console.log(`[process ${cwd}] exited code=${code}`),
 });
@@ -58,6 +62,16 @@ console.log("[smoke] prompt finished:", JSON.stringify(done));
 
 const sessions = await acp.listSessions();
 console.log(`[smoke] session/list returned ${sessions.sessions.length} session(s)`);
+
+console.log("[smoke] running interactive terminal command");
+const term = await manager.terminal.create(cwd, { sessionId: session.sessionId, command: "read a; echo got:$a" }, manager.ev as any);
+await new Promise((r) => setTimeout(r, 200));
+manager.terminal.write(term.terminalId, "smoke-input\n", session.sessionId);
+await manager.terminal.waitForExit(term.terminalId);
+const out = manager.terminal.output(term.terminalId).output;
+if (!out.includes("got:smoke-input")) {
+  throw new Error(`terminal smoke failed; output was: ${JSON.stringify(out)}`);
+}
 
 manager.killAll();
 console.log("[smoke] OK");

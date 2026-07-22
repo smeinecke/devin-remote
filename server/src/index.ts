@@ -7,6 +7,7 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { AcpManager } from "./manager.js";
+import { TerminalRunner } from "./terminal.js";
 import { Store } from "./store.js";
 import { WsHub } from "./ws.js";
 import { SessionLog } from "./sessionlog.js";
@@ -149,16 +150,8 @@ const permissionOwner = new Map<string, import("./acp.js").DevinAcp>();
 const primaryCwd = process.cwd();
 
 const httpServer = http.createServer();
-
-const hub = new WsHub(
-  httpServer,
-  () => ({
-    type: "config",
-    app: { name: "devin-remote", version: pkg.version },
-    settings: store.settings,
-  }),
-  { verifyOrigin: isAllowedRequest },
-);
+const terminal = new TerminalRunner();
+let hub!: WsHub;
 
 const manager = new AcpManager({
   onSessionUpdate: (sessionId, update) => {
@@ -188,7 +181,18 @@ const manager = new AcpManager({
   onExit: (cwd, code) => {
     hub.broadcast({ type: "process_status", cwd, status: "exited", code });
   },
-});
+}, terminal);
+
+hub = new WsHub(
+  httpServer,
+  () => ({
+    type: "config",
+    app: { name: "devin-remote", version: pkg.version },
+    settings: store.settings,
+  }),
+  terminal,
+  { verifyOrigin: isAllowedRequest },
+);
 
 const ctx: ApiContext = {
   store,

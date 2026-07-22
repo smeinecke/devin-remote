@@ -15,7 +15,7 @@ export interface ManagedProcess {
 export class AcpManager {
   private byCwd = new Map<string, ManagedProcess>();
   private starting = new Map<string, Promise<DevinAcp>>();
-  readonly terminal = new TerminalRunner();
+  readonly terminal: TerminalRunner;
 
   constructor(
     private ev: Omit<DevinAcpEvents, "onExit"> & {
@@ -23,7 +23,10 @@ export class AcpManager {
       /** Called with the owning process for each permission request. */
       onPermissionOwner: (requestId: string, owner: DevinAcp) => void;
     },
-  ) {}
+    terminal?: TerminalRunner,
+  ) {
+    this.terminal = terminal ?? new TerminalRunner();
+  }
 
   /** Get (or lazily start) the ACP process for a workspace directory. */
   async get(cwd: string): Promise<DevinAcp> {
