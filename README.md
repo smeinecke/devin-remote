@@ -58,7 +58,7 @@ Then open http://127.0.0.1:7781 — that's it.
 
 - **Session dashboard** — every Devin CLI session across all your workspaces,
   searchable, grouped by directory, with live activity indicators. Resume any
-  session with full history replay (`session/load`).
+  session from the latest server-side replay or snapshot (`session/load`).
 - **Streaming chat** — markdown with GFM, KaTeX math, Mermaid diagrams and
   syntax highlighting; collapsible thinking blocks; plan checklists.
 - **Tool calls, rendered properly** — status, per-file diffs with +/- coloring,
@@ -71,7 +71,7 @@ Then open http://127.0.0.1:7781 — that's it.
 - **Usage view** — per-session context-window gauge, per-turn token counts,
   daily aggregates, and an approximate cost-tier reference.
 - **Terminals** — agent-spawned terminals (ACP `terminal/*`) rendered with
-  xterm.js in a bottom drawer.
+  xterm.js in the inspector drawer.
 - **Attachments** — drag & drop or paste images into the composer; `@path`
   mentions send files as context.
 - **Session export** — one click downloads a ZIP with the transcript
@@ -142,12 +142,15 @@ body is capped at 25 MiB, and file access is confined to the workspace.
 browser (React SPA) ──REST/WS──> devin-remote server ──stdio JSON-RPC (ACP)──> devin acp ──> Devin
 ```
 
-Devin Remote spawns one `devin acp` process per workspace directory and speaks
-the [Agent Client Protocol](https://agentclientprotocol.com) over stdio — the
-same protocol Zed uses to embed coding agents. Session updates stream to the
-browser over a WebSocket; your actions (prompts, permission decisions, mode and
-model changes) go back over REST. No database, no native modules, no cloud
-relay.
+Devin Remote spawns one `devin acp` process per session and speaks the
+[Agent Client Protocol](https://agentclientprotocol.com) over stdio — the same
+protocol Zed uses to embed coding agents. Session updates stream to the browser
+over a WebSocket; your actions (prompts, permission decisions, mode and model
+changes) go back over REST. No database, no native modules, no cloud relay.
+
+The server keeps a bounded, per-session in-memory event buffer. Reconnects and
+session resumption receive the events still in that buffer plus a partial
+controller snapshot; older history is not persisted today.
 
 ### State synchronization
 
