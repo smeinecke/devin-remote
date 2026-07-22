@@ -315,11 +315,19 @@ export default function ChatView({ session }: { session: SessionState | null }) 
         {session && <Gauge usage={session.usage} />}
         {session && (
           <TooltipIconButton
-            tooltip="Terminals"
+            tooltip="Inspector"
             variant="ghost"
             size="icon"
-            className={cn("size-9 text-muted-foreground", state.ui.terminalOpen && "bg-secondary text-foreground")}
-            onClick={() => setUi({ terminalOpen: !state.ui.terminalOpen })}
+            className={cn(
+              "size-9 text-muted-foreground",
+              state.ui.inspectorOpen && state.ui.inspectorTab === "terminal" && "bg-secondary text-foreground",
+            )}
+            onClick={() =>
+              setUi({
+                inspectorOpen: !(state.ui.inspectorOpen && state.ui.inspectorTab === "terminal"),
+                inspectorTab: "terminal",
+              })
+            }
           >
             <SquareTerminalIcon className="size-4" />
           </TooltipIconButton>
@@ -329,8 +337,16 @@ export default function ChatView({ session }: { session: SessionState | null }) 
             tooltip="Agent log"
             variant="ghost"
             size="icon"
-            className={cn("size-9 text-muted-foreground", state.ui.logOpen && "bg-secondary text-foreground")}
-            onClick={() => setUi({ logOpen: !state.ui.logOpen })}
+            className={cn(
+              "size-9 text-muted-foreground",
+              state.ui.inspectorOpen && state.ui.inspectorTab === "logs" && "bg-secondary text-foreground",
+            )}
+            onClick={() =>
+              setUi({
+                inspectorOpen: !(state.ui.inspectorOpen && state.ui.inspectorTab === "logs"),
+                inspectorTab: "logs",
+              })
+            }
           >
             <ScrollTextIcon className="size-4" />
           </TooltipIconButton>

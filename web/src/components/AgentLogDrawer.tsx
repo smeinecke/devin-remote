@@ -15,7 +15,7 @@ export default function AgentLogDrawer() {
   }, [state.agentLog.length]);
 
   return (
-    <div className="flex h-56 flex-none flex-col border-t border-border bg-card/40">
+    <div className="flex h-full flex-col bg-card/40">
       <div className="flex h-10 flex-none items-center gap-2 border-b border-border px-3">
         <span className="text-[13px] font-medium">Agent log</span>
         <span className="tnum rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
@@ -30,8 +30,8 @@ export default function AgentLogDrawer() {
           variant="ghost"
           size="icon"
           className="size-7"
-          aria-label="close log"
-          onClick={() => setUi({ logOpen: false })}
+          aria-label="close inspector"
+          onClick={() => setUi({ inspectorOpen: false })}
         >
           <XIcon className="size-3.5" />
         </TooltipIconButton>

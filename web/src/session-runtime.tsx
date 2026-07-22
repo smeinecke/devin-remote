@@ -1,9 +1,9 @@
 // Bridge between our ACP session store and assistant-ui's ExternalStoreRuntime.
 //
-// The store stays the source of truth: every timeline entry is mapped to a
-// ThreadMessageLike (user bubbles, assistant markdown, reasoning parts for
-// thought chunks, tool-call parts for ACP tool calls). assistant-ui only
-// renders; sending/cancelling goes back through the store's actions.
+// The store stays the source of truth. Timeline items are grouped by "run"
+// (one user message → one assistant turn) so that the chat thread shows a
+// single assistant bubble per turn containing text, reasoning, and tool-call
+// parts, instead of flattening every tool call into a separate message.
 
 import { useMemo, type FC, type ReactNode } from "react";
 import {
@@ -30,16 +30,12 @@ function safeArgsText(raw: unknown): string | undefined {
   }
 }
 
-// Conversion caches, keyed by store-object identity. The store is immutable:
-// a changed message/tool call is a NEW object, so a cache hit means "content
-// unchanged" and assistant-ui gets the exact same ThreadMessageLike reference
-// back. Without this, every streamed chunk rebuilt every message object and
-// re-rendered the whole thread (the mobile "render storm").
-const userMsgCache = new WeakMap<ChatMessage, ThreadMessageLike>();
-const assistantMsgCache = new WeakMap<ChatMessage, ThreadMessageLike>();
-const toolMsgCache = new WeakMap<ToolCallState, ThreadMessageLike>();
+type ContentPart = Exclude<ThreadMessageLike["content"], string>[number];
 
-function cached<K extends object>(cache: WeakMap<K, ThreadMessageLike>, key: K, build: (k: K) => ThreadMessageLike): ThreadMessageLike {
+const userMsgCache = new WeakMap<ChatMessage, ThreadMessageLike>();
+const toolPartCache = new WeakMap<ToolCallState, ContentPart>();
+
+function cached<K extends object, V>(cache: WeakMap<K, V>, key: K, build: (k: K) => V): V {
   let v = cache.get(key);
   if (!v) {
     v = build(key);
@@ -65,69 +61,87 @@ function userMessage(m: ChatMessage): ThreadMessageLike {
   };
 }
 
-function assistantMessage(m: ChatMessage): ThreadMessageLike {
+function toolCallPart(t: ToolCallState): Extract<ThreadMessageLike["content"], readonly unknown[]>[number] {
   return {
-    id: m.id,
-    role: "assistant",
-    createdAt: new Date(m.ts),
-    content:
-      m.role === "thought"
-        ? [{ type: "reasoning", text: m.text }]
-        : [{ type: "text", text: m.text }],
+    type: "tool-call",
+    toolCallId: t.id,
+    toolName: t.kind || t.title || "tool",
+    args: safeArgs(t.rawInput),
+    argsText: safeArgsText(t.rawInput),
+    result: t.rawOutput,
+    isError: t.status === "failed",
   };
 }
 
-function toolCallMessage(t: ToolCallState): ThreadMessageLike {
+function runMessage(id: string, createdAt: Date, parts: readonly ContentPart[]): ThreadMessageLike {
   return {
-    id: `tc-${t.id}`,
+    id,
     role: "assistant",
-    createdAt: new Date(t.startedAt),
-    content: [
-      {
-        type: "tool-call",
-        toolCallId: t.id,
-        toolName: t.kind || t.title || "tool",
-        args: safeArgs(t.rawInput),
-        argsText: safeArgsText(t.rawInput),
-        result: t.rawOutput,
-        isError: t.status === "failed",
-      },
-    ],
+    createdAt,
+    content: parts as ThreadMessageLike["content"],
   };
 }
 
 export function sessionToMessages(s: SessionState): ThreadMessageLike[] {
   const out: ThreadMessageLike[] = [];
+  let runId = "";
+  let runCreatedAt = new Date();
+  let runParts: ContentPart[] = [];
+
+  const flushRun = () => {
+    if (runParts.length === 0) return;
+    out.push(runMessage(runId || `run-${Date.now()}`, runCreatedAt, runParts));
+    runParts = [];
+    runId = "";
+  };
+
   for (const item of s.timeline) {
     if (item.kind === "message") {
       const m = s.messages[item.id];
       if (!m) continue;
-      out.push(
-        m.role === "user"
-          ? cached(userMsgCache, m, userMessage)
-          : cached(assistantMsgCache, m, assistantMessage),
-      );
-    } else {
+      if (m.role === "user") {
+        flushRun();
+        out.push(cached(userMsgCache, m, userMessage));
+        runId = `${m.id}-run`;
+        runCreatedAt = new Date(m.ts);
+      } else if (m.role === "thought") {
+        if (runParts.length === 0) {
+          runId = runId || `run-${m.id}`;
+          runCreatedAt = new Date(m.ts);
+        }
+        runParts.push({ type: "reasoning", text: m.text });
+      } else {
+        if (runParts.length === 0) {
+          runId = runId || `run-${m.id}`;
+          runCreatedAt = new Date(m.ts);
+        }
+        runParts.push({ type: "text", text: m.text });
+      }
+      continue;
+    }
+
+    if (item.kind === "tool") {
       const t = s.toolCalls[item.id];
-      if (t) out.push(cached(toolMsgCache, t, toolCallMessage));
+      if (!t) continue;
+      if (runParts.length === 0) {
+        runId = runId || `run-${t.id}`;
+        runCreatedAt = new Date(t.startedAt);
+      }
+      runParts.push(cached(toolPartCache, t, toolCallPart));
     }
   }
+
+  flushRun();
   return out;
 }
 
-function attachmentImageUrl(
-  a: NonNullable<AppendMessage["attachments"]>[number],
-): string {
+function attachmentImageUrl(a: NonNullable<AppendMessage["attachments"]>[number]): string {
   for (const part of a.content ?? []) {
     if (part.type === "image") return part.image;
   }
   return "";
 }
 
-/**
- * Creates one ExternalStoreRuntime per session. Remounted via `key` on
- * session switch by the caller, so the runtime never spans two sessions.
- */
 export function SessionRuntime({
   session,
   children,

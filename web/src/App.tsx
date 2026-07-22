@@ -7,14 +7,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { XIcon } from "lucide-react";
 
-const TerminalPanel = lazy(() => import("./components/TerminalPanel"));
-const AgentLogDrawer = lazy(() => import("./components/AgentLogDrawer"));
+const Inspector = lazy(() => import("./components/Inspector"));
 const SettingsModal = lazy(() => import("./components/SettingsModal"));
 const UsagePanel = lazy(() => import("./components/UsagePanel"));
 const CommandPalette = lazy(() => import("./components/CommandPalette"));
 
 function applyTheme(theme: "dark" | "light" | "system"): void {
-  // Light is the default; dark is opt-in via the .dark class.
   const resolved =
     theme === "system"
       ? window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -31,7 +29,6 @@ export default function App() {
     void refreshMeta();
     void refreshSessions();
     startWs();
-    // Replace the inline boot splash with the React tree.
     document.getElementById("dc-boot")?.remove();
   }, []);
 
@@ -72,11 +69,21 @@ export default function App() {
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <ChatView session={active} />
-          <Suspense fallback={<DrawerSkeleton />}>
-            {state.ui.terminalOpen && <TerminalPanel />}
-            {state.ui.logOpen && <AgentLogDrawer />}
-          </Suspense>
         </div>
+        {state.ui.inspectorOpen && (
+          <div
+            className="fixed inset-0 z-40 flex justify-end bg-black/50 backdrop-blur-[2px] md:static md:z-auto md:bg-transparent md:backdrop-blur-none"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setUi({ inspectorOpen: false });
+            }}
+          >
+            <div className="h-full w-full sm:w-80 lg:w-96">
+              <Suspense fallback={<InspectorSkeleton />}>
+                <Inspector />
+              </Suspense>
+            </div>
+          </div>
+        )}
         <Suspense fallback={null}>
           {state.ui.modal === "settings" && <SettingsModal />}
           {state.ui.modal === "usage" && <UsagePanel />}
@@ -99,11 +106,11 @@ export default function App() {
   );
 }
 
-function DrawerSkeleton() {
+function InspectorSkeleton() {
   return (
-    <div className="flex h-56 flex-none flex-col gap-2 border-t border-border p-3">
-      <Skeleton className="dc-shimmer h-8 rounded-md" />
-      <Skeleton className="dc-shimmer min-h-0 flex-1 rounded-md" />
+    <div className="hidden h-full w-80 flex-none flex-col border-l border-border bg-card/40 md:flex">
+      <Skeleton className="dc-shimmer h-10 w-full" />
+      <Skeleton className="dc-shimmer min-h-0 flex-1" />
     </div>
   );
 }

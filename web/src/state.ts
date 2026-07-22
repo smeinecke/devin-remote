@@ -15,6 +15,7 @@ import type {
   ToolCallState,
 } from "./store-types";
 import { mentionToUri, extractMentions } from "./utils";
+import { rebuildRuns } from "./runs";
 import type {
   MetaResponse,
   PromptBlock,
@@ -51,8 +52,6 @@ let state: AppState = {
   ui: {
     sidebarOpen: false,
     modal: null,
-    terminalOpen: false,
-    logOpen: false,
     inspectorTab: "terminal",
     inspectorOpen: false,
     activeTerminalBySession: {},
@@ -140,6 +139,7 @@ export function updateSession(sessionId: string, fn: (draft: SessionState) => vo
   if (!existing) return;
   const draft = { ...existing };
   fn(draft);
+  rebuildRuns(draft);
   setState({ sessions: { ...state.sessions, [sessionId]: draft } });
 }
 

@@ -52,6 +52,10 @@ export interface AgentRun {
   completedAt?: number;
   activities: AgentActivity[];
   finalMessageId?: string;
+  /** Rendered assistant text accumulated for this run (agent + thought chunks). */
+  assistantText: string;
+  plan: PlanEntry[] | null;
+  usage: { used: number; size: number } | null;
 }
 
 export type ActivityType =
@@ -74,6 +78,8 @@ export interface AgentActivity {
   completedAt?: number;
   details?: unknown;
   autoExpand?: boolean;
+  /** Optional terminal/diff/file metadata for the inspector. */
+  meta?: { path?: string; terminalId?: string; command?: string };
 }
 
 export type TimelineItem = { kind: "message" | "tool" | "run"; id: string };
@@ -141,9 +147,7 @@ export interface AgentLogEntry {
 export interface UiState {
   sidebarOpen: boolean;
   modal: null | "settings" | "usage" | "palette";
-  terminalOpen: boolean;
-  logOpen: boolean;
-  inspectorTab: "changes" | "terminal" | "files" | "logs" | "plan";
+  inspectorTab: "activity" | "changes" | "terminal" | "files" | "logs" | "plan";
   inspectorOpen: boolean;
   activeTerminalBySession: Record<string, string | null>;
   modelPickerOpen: boolean;

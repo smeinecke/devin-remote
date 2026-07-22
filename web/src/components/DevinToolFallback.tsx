@@ -85,7 +85,7 @@ function TerminalOpenButton({ terminalId }: { terminalId: string }) {
         const next = activeSessionId
           ? { ...ui.activeTerminalBySession, [activeSessionId]: terminalId }
           : ui.activeTerminalBySession;
-        setUi({ terminalOpen: true, activeTerminalBySession: next });
+        setUi({ inspectorOpen: true, inspectorTab: "terminal", activeTerminalBySession: next });
       }}
     >
       <SquareTerminalIcon className="size-3.5" />

@@ -110,7 +110,7 @@ export default function TerminalPanel() {
     null;
 
   return (
-    <div className="flex h-64 flex-none flex-col border-t border-border bg-card/40">
+    <div className="flex h-full flex-col bg-card/40">
       <div className="flex h-10 flex-none items-center gap-2 border-b border-border px-3">
         <SquareTerminalIcon className="size-3.5 text-muted-foreground" />
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
@@ -156,8 +156,8 @@ export default function TerminalPanel() {
           variant="ghost"
           size="icon"
           className="size-7 flex-none"
-          aria-label="close terminals"
-          onClick={() => setUi({ terminalOpen: false })}
+          aria-label="close inspector"
+          onClick={() => setUi({ inspectorOpen: false })}
         >
           <XIcon className="size-3.5" />
         </TooltipIconButton>
