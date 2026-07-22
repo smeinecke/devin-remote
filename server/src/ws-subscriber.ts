@@ -75,6 +75,7 @@ export class WsSubscriber {
                   sessionId,
                   previousGeneration: requestedGeneration,
                   processGeneration: currentGeneration,
+                  subscriptionEstablished: true,
                 }));
                 this.replayOrSnapshot(ws, sessionId, currentGeneration, 0, controller);
                 continue;

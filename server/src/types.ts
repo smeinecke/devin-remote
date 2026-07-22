@@ -102,6 +102,8 @@ export interface GenerationChangedEnvelope {
   sessionId: string;
   previousGeneration: number;
   processGeneration: number;
+  /** True when the server has already established the subscription and sent replay/snapshot. */
+  subscriptionEstablished?: boolean;
 }
 
 export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | GenerationChangedEnvelope | { type: "config"; app: { name: string; version: string }; settings: StoreShape["settings"] };

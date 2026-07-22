@@ -673,7 +673,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
 
   if (ev.type === "generation_changed") {
     const g = ev as GenerationChangedEnvelope;
-    handleGenerationChanged(g.sessionId, g.previousGeneration, g.processGeneration);
+    handleGenerationChanged(g.sessionId, g.previousGeneration, g.processGeneration, g.subscriptionEstablished ?? false);
     return;
   }
 
@@ -698,6 +698,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
       d.processGeneration = s.processGeneration;
       if (replacing || generationChanged) {
         d.lastSequence = 0;
+        d.activePromptRequest = null;
       }
       if (replacing) {
         d.timeline = [];
@@ -710,6 +711,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
         d.permissions = [];
       }
       if (snapshotState.status) d.status = snapshotState.status as SessionState["status"];
+      if (typeof snapshotState.running === "boolean") d.running = snapshotState.running;
       if (snapshotState.pendingPermissions) d.permissions = snapshotState.pendingPermissions as PendingPermission[];
       d.synced = true;
     });
@@ -722,7 +724,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
   }
 }
 
-function handleGenerationChanged(sessionId: string, previousGeneration: number, processGeneration: number): void {
+function handleGenerationChanged(sessionId: string, previousGeneration: number, processGeneration: number, subscriptionEstablished: boolean): void {
   ensureSession({
     sessionId,
     cwd: state.sessions[sessionId] ? "" : state.meta?.primaryCwd ?? "",
@@ -736,6 +738,7 @@ function handleGenerationChanged(sessionId: string, previousGeneration: number, 
     d.processGeneration = processGeneration;
     d.lastSequence = 0;
     d.running = false;
+    d.activePromptRequest = null;
     d.permissions = [];
     d.openAgentMsg = null;
     d.openThoughtMsg = null;
@@ -752,14 +755,18 @@ function handleGenerationChanged(sessionId: string, previousGeneration: number, 
     }
   }
   setState({ terminals: nextTerminals });
-  subscribeSession(sessionId, processGeneration, 0);
+  if (subscriptionEstablished) {
+    updateCursor(sessionId, processGeneration, 0);
+  } else {
+    subscribeSession(sessionId, processGeneration, 0);
+  }
 }
 
 function applyEventEnvelope(ev: ServerEventEnvelope): void {
   const { sessionId, processGeneration, eventType, payload } = ev;
   if (eventType === "generation_changed") {
     const p = payload as { previousGeneration: number; processGeneration: number };
-    handleGenerationChanged(sessionId, p.previousGeneration, p.processGeneration);
+    handleGenerationChanged(sessionId, p.previousGeneration, p.processGeneration, false);
     return;
   }
   const session = state.sessions[sessionId];
