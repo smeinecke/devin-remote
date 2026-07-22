@@ -149,10 +149,20 @@ browser over a WebSocket; your actions (prompts, permission decisions, mode and
 model changes) go back over REST. No database, no native modules, no cloud
 relay.
 
+### State synchronization
+
+Each session tracks a `processGeneration` that increments whenever the ACP
+process is restarted. The server and browser tag in-flight prompts, cursor
+positions and WebSocket subscriptions with that generation, so a stale prompt
+or event from a replaced process cannot corrupt the current generation. On
+reconnect the server sends its authoritative generation and a replay/snapshot
+tailored to it, which keeps the UI in sync even when the in-memory event buffer
+rolls over.
+
 ## Development
 
 ```bash
-git clone https://github.com/zouhall/devin-remote.git
+git clone https://github.com/smeinecke/devin-remote.git
 cd devin-remote
 npm install
 npm run dev        # server on :7781 (tsx watch) + web on :5173 (vite)
@@ -162,6 +172,7 @@ npm run dev        # server on :7781 (tsx watch) + web on :5173 (vite)
 npm run build      # web → dist/web, server → dist/server
 npm start          # production server serving dist/web
 npm run typecheck  # tsc, both projects
+npm test           # unit tests for the server and state logic
 npm run smoke      # end-to-end ACP smoke test against your devin CLI
 ```
 
