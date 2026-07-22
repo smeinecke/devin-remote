@@ -124,6 +124,8 @@ export interface SessionState {
   openAgentMsg: string | null;
   openThoughtMsg: string | null;
   openUserMsg: string | null;
+  /** Highest event sequence applied for the current process generation. */
+  lastSequence: number;
 }
 
 export interface TerminalMeta {

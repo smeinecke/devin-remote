@@ -81,7 +81,7 @@ export class SessionRegistry {
   }
 
   /** Create a new session in its own ACP process and keep that process. */
-  async create(cwd: string): Promise<{ sessionId: string; cwd: string; modes?: acp.SessionModeState | null }> {
+  async create(cwd: string): Promise<{ sessionId: string; processGeneration: number; cwd: string; modes?: acp.SessionModeState | null }> {
     const placeholder = `new-${Date.now().toString(36)}`;
     const c = this.getOrCreate(placeholder, cwd, {
       title: null,
@@ -98,7 +98,7 @@ export class SessionRegistry {
       const finalId = c.sessionId;
       this.controllers.delete(placeholder);
       this.controllers.set(finalId, c);
-      return { sessionId: finalId, cwd, modes: c.modes };
+      return { sessionId: finalId, processGeneration: c.processGeneration, cwd, modes: c.modes };
     } finally {
       this.starting.delete(placeholder);
     }

@@ -18,7 +18,8 @@ export type EventType =
   | "terminal_exit"
   | "agent_log"
   | "process_status"
-  | "prompt_done";
+  | "prompt_done"
+  | "generation_changed";
 
 interface SessionEvent<T = unknown> {
   sessionId: string;

@@ -112,29 +112,37 @@ export async function handleApi(
       const isolate = ctx.store.settings.worktreeIsolation && (body.isolate !== false);
 
       const gitRoot = await isGitRepository(cwd);
-      let worktreeInfo = { root: cwd, worktree: cwd, branch: "", isIsolated: false };
+      let worktreeInfo: { root: string; worktree: string; branch: string; isIsolated: boolean } = { root: cwd, worktree: cwd, branch: "", isIsolated: false };
       if (gitRoot && isolate) {
         const tempId = `new-${Date.now().toString(36)}`;
         worktreeInfo = await createWorktree(tempId, cwd);
         cwd = worktreeInfo.worktree;
       }
 
-      const created = await ctx.registry.create(cwd);
-      ctx.store.addWorkspace(worktreeInfo.root);
-      ctx.store.ensureSession(created.sessionId, {
-        cwd,
-        title: null,
-        branch: worktreeInfo.branch || null,
-        worktree: worktreeInfo.worktree,
-      });
+      try {
+        const created = await ctx.registry.create(cwd);
+        ctx.store.addWorkspace(worktreeInfo.root);
+        ctx.store.ensureSession(created.sessionId, {
+          cwd,
+          title: null,
+          branch: worktreeInfo.branch || null,
+          worktree: worktreeInfo.worktree,
+        });
 
-      return json(res, 200, {
-        sessionId: created.sessionId,
-        cwd,
-        branch: worktreeInfo.branch || null,
-        worktree: worktreeInfo.worktree,
-        modes: created.modes ?? null,
-      });
+        return json(res, 200, {
+          sessionId: created.sessionId,
+          processGeneration: created.processGeneration,
+          cwd,
+          branch: worktreeInfo.branch || null,
+          worktree: worktreeInfo.worktree,
+          modes: created.modes ?? null,
+        });
+      } catch (error) {
+        if (worktreeInfo.isIsolated) {
+          await cleanupWorktree(worktreeInfo.worktree).catch((err) => console.error("rollback cleanup failed:", err));
+        }
+        throw error;
+      }
     }
 
     if (parts[1] === "sessions" && parts.length >= 4) {

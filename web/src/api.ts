@@ -34,7 +34,7 @@ export const api = {
   listSessions: () => req<{ sessions: SessionSummary[] }>("GET", "/api/sessions"),
 
   createSession: (cwd: string, isolate?: boolean) =>
-    req<{ sessionId: string; cwd: string; branch: string | null; worktree: string | null; modes: unknown }>("POST", "/api/sessions", { cwd, isolate }),
+    req<{ sessionId: string; processGeneration: number; cwd: string; branch: string | null; worktree: string | null; modes: unknown }>("POST", "/api/sessions", { cwd, isolate }),
 
   attachSession: (sessionId: string) =>
     req<{ ok: boolean; status: string; processGeneration: number }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/attach`),

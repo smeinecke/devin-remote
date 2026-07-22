@@ -42,6 +42,14 @@ export interface SessionSnapshot {
   activeOperation?: string;
   pendingPermissions: PermissionRequest[];
   running: boolean;
+  /** Sequence number of the newest event in the generation buffer. */
+  latestSequence: number;
+  /** Materialized conversation state when available. */
+  messages?: Record<string, unknown>;
+  timeline?: unknown[];
+  toolCalls?: Record<string, unknown>;
+  plan?: unknown | null;
+  usage?: unknown | null;
 }
 
 export class SessionController {
@@ -145,6 +153,7 @@ export class SessionController {
       activeOperation: this.activeOperation,
       pendingPermissions: [...this.pendingPermissions.values()],
       running: this.isRunning,
+      latestSequence: this.eventBus.latestSequence(this.sessionId, this.processGeneration) ?? 0,
     };
   }
 
@@ -207,23 +216,53 @@ export class SessionController {
     }
 
     this.loadingPromise = (async () => {
-      if (this.acp?.exited || !this.acp) {
-        this.processGeneration += 1;
-        this.terminalManager.releaseFor(this.sessionId, this.processGeneration - 1);
-        this.eventBus.reset(this.sessionId, this.processGeneration);
+      // Replace the previous process. Capture the old one, bump the generation,
+      // release its resources, and kill it before starting the replacement.
+      const oldAcp = this.acp;
+      this.acp = null;
+      this.processGeneration += 1;
+      const gen = this.processGeneration;
+      const previousGeneration = gen - 1;
+      this.terminalManager.releaseFor(this.sessionId, previousGeneration);
+      this.eventBus.reset(this.sessionId, gen);
+      this.eventBus.emit(this.sessionId, previousGeneration, "generation_changed", { previousGeneration, processGeneration: gen });
+      for (const requestId of this.pendingPermissions.keys()) {
+        this.eventBus.emit(this.sessionId, gen, "permission_resolved", { requestId });
+      }
+      this.pendingPermissions.clear();
+      if (oldAcp && !oldAcp.exited) {
+        oldAcp.kill();
       }
 
-      const gen = this.processGeneration;
       const acp = await factory(this.cwd, gen, {
-        onSessionUpdate: (u: acp.SessionNotification) => this.handleSessionUpdate(u),
-        onAgentLog: (channel: string, message: string, level: string) => this.handleAgentLog(channel, message, level),
-        onPermissionRequest: (requestId: string, toolCall: unknown, options: PermissionRequest["options"]) =>
-          this.handlePermissionRequest(requestId, toolCall, options),
-        onPermissionResolved: (requestId: string) => this.handlePermissionResolved(requestId),
-        onTerminalOutput: (terminalId: string, data: string) => this.handleTerminalOutput(terminalId, data),
-        onTerminalExit: (terminalId: string, exitCode: number | null, signal: string | null) =>
-          this.handleTerminalExit(terminalId, exitCode, signal),
-        onExit: (code: number | null) => this.handleAcpExit(code),
+        onSessionUpdate: (u: acp.SessionNotification) => {
+          if (gen !== this.processGeneration) return;
+          this.handleSessionUpdate(u);
+        },
+        onAgentLog: (channel: string, message: string, level: string) => {
+          if (gen !== this.processGeneration) return;
+          this.handleAgentLog(channel, message, level);
+        },
+        onPermissionRequest: (requestId: string, toolCall: unknown, options: PermissionRequest["options"]) => {
+          if (gen !== this.processGeneration) return;
+          this.handlePermissionRequest(requestId, toolCall, options);
+        },
+        onPermissionResolved: (requestId: string) => {
+          if (gen !== this.processGeneration) return;
+          this.handlePermissionResolved(requestId);
+        },
+        onTerminalOutput: (terminalId: string, data: string) => {
+          if (gen !== this.processGeneration) return;
+          this.handleTerminalOutput(terminalId, data);
+        },
+        onTerminalExit: (terminalId: string, exitCode: number | null, signal: string | null) => {
+          if (gen !== this.processGeneration) return;
+          this.handleTerminalExit(terminalId, exitCode, signal);
+        },
+        onExit: (code: number | null) => {
+          if (gen !== this.processGeneration) return;
+          this.handleAcpExit(code);
+        },
       });
 
       if (gen !== this.processGeneration) {
@@ -274,7 +313,9 @@ export class SessionController {
       this.metadata.updatedAt = Date.now();
       return result;
     } catch (err) {
-      if (this.status === "running" || this.status === "waiting_for_permission" || this.status === "cancelling") {
+      if (this.status === "cancelling") {
+        this.transition("complete");
+      } else if (this.status === "running" || this.status === "waiting_for_permission") {
         this.transition("fail");
       }
       this.activeOperation = undefined;
@@ -307,7 +348,7 @@ export class SessionController {
     if (ok) {
       this.pendingPermissions.delete(requestId);
       this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", { requestId, optionId });
-      if (this.status === "waiting_for_permission") {
+      if (this.pendingPermissions.size === 0 && this.status === "waiting_for_permission") {
         this.transition("resolve");
       }
     }
@@ -369,6 +410,9 @@ export class SessionController {
   private handlePermissionResolved(requestId: string) {
     this.pendingPermissions.delete(requestId);
     this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", { requestId });
+    if (this.pendingPermissions.size === 0 && this.status === "waiting_for_permission") {
+      this.transition("resolve");
+    }
   }
 
   private handleTerminalOutput(terminalId: string, data: string) {

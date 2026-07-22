@@ -57,8 +57,8 @@ export class WsSubscriber {
 
       ws.on("message", (data) => {
         try {
-          const msg = JSON.parse(String(data)) as { type: string; sessions?: Record<string, { after?: number; processGeneration?: number }> };
-          if (msg.type === "subscribe" && msg.sessions) {
+          const msg = JSON.parse(String(data)) as { type: string; sessions?: Record<string, { after?: number; processGeneration?: number }> | string[] };
+          if (msg.type === "subscribe" && msg.sessions && !Array.isArray(msg.sessions)) {
             for (const [sessionId, cursor] of Object.entries(msg.sessions)) {
               const controller = this.registry.get(sessionId);
               const processGeneration = cursor.processGeneration ?? controller?.processGeneration ?? 0;
@@ -74,6 +74,11 @@ export class WsSubscriber {
                   ws.send(JSON.stringify(toEnvelope(ev)));
                 }
               }
+            }
+          }
+          if (msg.type === "unsubscribe" && Array.isArray(msg.sessions)) {
+            for (const sessionId of msg.sessions) {
+              client.subscriptions.delete(sessionId);
             }
           }
         } catch {

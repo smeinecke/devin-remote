@@ -21,11 +21,18 @@ export function startWs(): void {
 }
 
 export function setCursor(sessionId: string, processGeneration: number, after: number): void {
-  cursors.set(sessionId, { processGeneration, after });
+  const cursor = { processGeneration, after };
+  cursors.set(sessionId, cursor);
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "subscribe", sessions: { [sessionId]: cursor } }));
+  }
 }
 
 export function removeCursor(sessionId: string): void {
   cursors.delete(sessionId);
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "unsubscribe", sessions: [sessionId] }));
+  }
 }
 
 function subscribeAll() {

@@ -8,7 +8,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -55,7 +55,7 @@ export async function createWorktree(
   }
 
   const base = sanitize(path.basename(root));
-  const suffix = sanitize(sessionId.slice(0, 8));
+  const suffix = sanitize(sessionId) + "-" + randomBytes(8).toString("hex");
   const branch = `devin-remote/${base}/${suffix}`;
   const worktreesDir = path.join(root, ".devin-remote", "worktrees");
   const worktree = path.join(worktreesDir, suffix + "-" + randomUUID().slice(0, 8));
@@ -68,14 +68,11 @@ export async function createWorktree(
 
   await fs.mkdir(worktreesDir, { recursive: true });
 
-  // Create branch if it doesn't exist.
-  try {
-    await execFileP("git", ["-C", root, "branch", "--no-track", branch], { timeout: 10_000 });
-  } catch (err: any) {
-    if (!/already exists/i.test(err?.stderr ?? err?.message ?? "")) throw err;
-  }
+  // Resolve the base revision from the requested cwd, not the root worktree HEAD.
+  const { stdout: headOut } = await execFileP("git", ["-C", baseCwd, "rev-parse", "HEAD"], { timeout: 10_000 });
+  const baseCommit = headOut.trim();
 
-  await execFileP("git", ["-C", root, "worktree", "add", worktree, branch], { timeout: 30_000 });
+  await execFileP("git", ["-C", root, "worktree", "add", "-b", branch, worktree, baseCommit], { timeout: 30_000 });
 
   return { root, worktree, branch, isIsolated: true };
 }
@@ -85,23 +82,12 @@ export async function cleanupWorktree(worktree: string): Promise<void> {
   if (!root) return;
 
   // Safety: refuse to remove worktree with uncommitted changes.
-  try {
-    const { stdout } = await execFileP("git", ["-C", worktree, "status", "--porcelain"], { timeout: 10_000 });
-    if (stdout.trim()) {
-      throw new Error("worktree has uncommitted changes; remove it manually");
-    }
-
-    const { stdout: branchOut } = await execFileP("git", ["-C", worktree, "symbolic-ref", "--short", "HEAD"], { timeout: 10_000 });
-    const branch = branchOut.trim();
-
-    await execFileP("git", ["-C", root, "worktree", "remove", worktree], { timeout: 30_000 });
-
-    if (branch && branch.startsWith("devin-remote/")) {
-      await execFileP("git", ["-C", root, "branch", "-D", branch], { timeout: 10_000 }).catch(() => {});
-    }
-  } catch (err) {
-    throw err;
+  const { stdout } = await execFileP("git", ["-C", worktree, "status", "--porcelain"], { timeout: 10_000 });
+  if (stdout.trim()) {
+    throw new Error("worktree has uncommitted changes; remove it manually");
   }
+
+  await execFileP("git", ["-C", root, "worktree", "remove", worktree], { timeout: 30_000 });
 }
 
 export async function listWorktrees(root: string): Promise<string[]> {

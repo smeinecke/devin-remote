@@ -131,6 +131,7 @@ function emptySession(summary: SessionSummary): SessionState {
     openAgentMsg: null,
     openThoughtMsg: null,
     openUserMsg: null,
+    lastSequence: 0,
   };
 }
 
@@ -203,11 +204,11 @@ export async function createSession(cwd: string): Promise<void> {
     });
     updateSession(res.sessionId, (d) => {
       d.synced = true;
-      d.processGeneration = 0;
+      d.processGeneration = res.processGeneration;
       d.status = "idle";
     });
     setState({ activeSessionId: res.sessionId, ui: { ...state.ui, sidebarOpen: false } });
-    setCursor(res.sessionId, 0, 0);
+    setCursor(res.sessionId, res.processGeneration, 0);
     const { defaultModel, defaultMode } = state.settings;
     if (defaultMode) void api.setConfig(res.sessionId, "mode", defaultMode).catch(() => undefined);
     if (defaultModel) void api.setConfig(res.sessionId, "model", defaultModel).catch(() => undefined);
@@ -298,7 +299,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
         };
         d.toolCalls = { ...d.toolCalls, [tc.id]: tc };
         if (!existing) d.timeline = [...d.timeline, { kind: "tool", id: tc.id }];
-        registerTerminalsFromContent(sessionId, tc.content);
+        registerTerminalsFromContent(sessionId, processGeneration, tc.content);
         break;
       }
       case "tool_call_update": {
@@ -317,7 +318,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
           };
           d.toolCalls = { ...d.toolCalls, [tc.id]: tc };
           d.timeline = [...d.timeline, { kind: "tool", id: tc.id }];
-          registerTerminalsFromContent(sessionId, tc.content);
+          registerTerminalsFromContent(sessionId, processGeneration, tc.content);
           break;
         }
         const merged: ToolCallState = {
@@ -331,7 +332,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
               : existing.finishedAt,
         };
         d.toolCalls = { ...d.toolCalls, [merged.id]: merged };
-        if (u.content) registerTerminalsFromContent(sessionId, u.content);
+        if (u.content) registerTerminalsFromContent(sessionId, processGeneration, u.content);
         break;
       }
       case "plan": {
@@ -406,17 +407,28 @@ function normalizeToolContent(items: ToolCallContent[] | undefined): ToolCallCon
   return Array.isArray(items) ? items : [];
 }
 
-function registerTerminalsFromContent(sessionId: string, content: ToolCallContent[]): void {
+function registerTerminalsFromContent(sessionId: string, processGeneration: number, content: ToolCallContent[]): void {
+  const generation = state.sessions[sessionId]?.processGeneration ?? processGeneration;
   for (const item of content) {
     if (item.type === "terminal" && typeof (item as { terminalId?: unknown }).terminalId === "string") {
-      ensureTerminalMeta((item as { terminalId: string }).terminalId, sessionId, 0);
+      ensureTerminalMeta((item as { terminalId: string }).terminalId, sessionId, generation);
     }
   }
 }
 
 function ensureTerminalMeta(terminalId: string, sessionId: string, processGeneration: number): void {
   const existing = state.terminals[terminalId];
-  if (existing) return;
+  if (existing) {
+    if (existing.processGeneration !== processGeneration) {
+      setState({
+        terminals: {
+          ...state.terminals,
+          [terminalId]: { ...existing, processGeneration },
+        },
+      });
+    }
+    return;
+  }
   setState({
     terminals: {
       ...state.terminals,
@@ -636,15 +648,31 @@ export function dispatchEvent(ev: WsServerEvent): void {
 
   if (ev.type === "snapshot") {
     const s = ev as SnapshotEnvelope;
-    // A snapshot resets the client view of a session.
+    const complete = s.events.length === 0 || (s.events[0]?.sequence ?? 0) === 1;
+    const snapshotState = (s.state ?? {}) as Partial<SessionState>;
+    ensureSession({
+      sessionId: s.sessionId,
+      cwd: snapshotState.cwd ?? state.meta?.primaryCwd ?? "",
+      title: snapshotState.title ?? null,
+      alias: snapshotState.alias ?? null,
+      branch: snapshotState.branch ?? null,
+      worktree: snapshotState.worktree ?? null,
+      updatedAt: null,
+    });
     updateSession(s.sessionId, (d) => {
       d.processGeneration = s.processGeneration;
-      d.timeline = [];
-      d.messages = {};
-      d.toolCalls = {};
-      d.plan = null;
-      d.usage = null;
-      d.running = false;
+      d.lastSequence = 0;
+      if (complete) {
+        d.timeline = [];
+        d.messages = {};
+        d.toolCalls = {};
+        d.runs = {};
+        d.plan = null;
+        d.usage = null;
+        d.running = false;
+      }
+      if (snapshotState.status) d.status = snapshotState.status as SessionState["status"];
+      if (snapshotState.pendingPermissions) d.permissions = snapshotState.pendingPermissions as PendingPermission[];
       d.synced = true;
     });
     for (const e of s.events) applyEventEnvelope(e as ServerEventEnvelope);
@@ -658,9 +686,39 @@ export function dispatchEvent(ev: WsServerEvent): void {
 
 function applyEventEnvelope(ev: ServerEventEnvelope): void {
   const { sessionId, processGeneration, eventType, payload } = ev;
+  if (eventType === "generation_changed") {
+    const p = payload as { previousGeneration: number; processGeneration: number };
+    ensureSession({
+      sessionId,
+      cwd: state.sessions[sessionId] ? "" : state.meta?.primaryCwd ?? "",
+      title: null,
+      alias: null,
+      branch: null,
+      worktree: null,
+      updatedAt: null,
+    });
+    updateSession(sessionId, (d) => {
+      d.processGeneration = p.processGeneration;
+      d.lastSequence = 0;
+      d.timeline = [];
+      d.messages = {};
+      d.toolCalls = {};
+      d.runs = {};
+      d.plan = null;
+      d.usage = null;
+      d.running = false;
+      d.permissions = [];
+    });
+    setCursor(sessionId, p.processGeneration, 0);
+    return;
+  }
   const session = state.sessions[sessionId];
   if (session && session.processGeneration !== processGeneration) {
     // Ignore stale events from a replaced process.
+    return;
+  }
+  if (session && ev.sequence <= session.lastSequence) {
+    // Already applied.
     return;
   }
 
@@ -759,13 +817,19 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
     }
   }
 
-  // Update cursor so reconnect resumes from here.
+  // Update cursor and last-sequence tracker so reconnect resumes from here.
   if (sessionId && processGeneration) {
     const cur = getCursor(sessionId);
     if (cur && cur.processGeneration === processGeneration) {
       setCursor(sessionId, processGeneration, Math.max(cur.after, ev.sequence));
     } else {
       setCursor(sessionId, processGeneration, ev.sequence);
+    }
+    const current = state.sessions[sessionId];
+    if (current && current.processGeneration === processGeneration && ev.sequence > current.lastSequence) {
+      setState({
+        sessions: { ...state.sessions, [sessionId]: { ...current, lastSequence: ev.sequence } },
+      });
     }
   }
 
