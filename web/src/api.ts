@@ -3,8 +3,8 @@ import type {
   PromptBlock,
   PromptDoneResult,
   SessionSummary,
-  Settings,
   SessionUpdate,
+  Settings,
   UploadMeta,
   UsageResponse,
 } from "./types";
@@ -21,7 +21,7 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
       const data = (await res.json()) as { error?: string };
       if (data.error) msg = data.error;
     } catch {
-      /* keep generic message */
+      /* */
     }
     throw new Error(msg);
   }
@@ -33,26 +33,33 @@ export const api = {
 
   listSessions: () => req<{ sessions: SessionSummary[] }>("GET", "/api/sessions"),
 
-  createSession: (cwd: string) =>
-    req<{ sessionId: string; cwd: string; modes: unknown }>("POST", "/api/sessions", { cwd }),
+  createSession: (cwd: string, isolate?: boolean) =>
+    req<{ sessionId: string; cwd: string; branch: string | null; worktree: string | null; modes: unknown }>("POST", "/api/sessions", { cwd, isolate }),
+
+  attachSession: (sessionId: string) =>
+    req<{ ok: boolean; status: string; processGeneration: number }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/attach`),
 
   openSession: (sessionId: string, cwd?: string) =>
-    req<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/open`, { cwd }),
+    req<{ ok: boolean; status: string; processGeneration: number; branch: string | null; worktree: string | null }>(
+      "POST",
+      `/api/sessions/${encodeURIComponent(sessionId)}/open`,
+      { cwd },
+    ),
 
-  prompt: (sessionId: string, blocks: PromptBlock[], cwd?: string) =>
-    req<PromptDoneResult>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/prompt`, { cwd, blocks }),
+  prompt: (sessionId: string, blocks: PromptBlock[]) =>
+    req<PromptDoneResult>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/prompt`, { blocks }),
 
-  cancel: (sessionId: string, cwd?: string) =>
-    req<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/cancel`, { cwd }),
+  cancel: (sessionId: string) =>
+    req<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/cancel`, {}),
 
-  rename: (sessionId: string, title: string, cwd?: string) =>
-    req<{ ok: boolean; remote: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/rename`, {
-      title,
-      cwd,
-    }),
+  rename: (sessionId: string, title: string) =>
+    req<{ ok: boolean; remote: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/rename`, { title }),
 
-  setConfig: (sessionId: string, configId: "mode" | "model", value: string, cwd?: string) =>
-    req<unknown>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/config`, { configId, value, cwd }),
+  setConfig: (sessionId: string, configId: "mode" | "model", value: string) =>
+    req<unknown>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/config`, { configId, value }),
+
+  closeSession: (sessionId: string) =>
+    req<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/close`, {}),
 
   history: (sessionId: string) =>
     req<{ updates: SessionUpdate[] }>("GET", `/api/sessions/${encodeURIComponent(sessionId)}/history`),

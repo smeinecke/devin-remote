@@ -1,0 +1,120 @@
+/**
+ * Git worktree isolation for concurrent sessions.
+ *
+ * - Detects whether `cwd` is inside a Git repository.
+ * - Creates a dedicated worktree + branch under `.devin-remote/worktrees/`.
+ * - Sanitizes session-derived names and prevents path traversal.
+ * - Refuses to delete worktrees with uncommitted changes.
+ */
+
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
+
+export interface WorktreeInfo {
+  root: string;
+  worktree: string;
+  branch: string;
+  isIsolated: boolean;
+}
+
+function sanitize(input: string): string {
+  // Keep only safe filesystem characters; no leading dots or slashes.
+  return input
+    .replace(/[^a-zA-Z0-9_-]/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 40) || "session";
+}
+
+export async function findGitRoot(dir: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileP("git", ["-C", dir, "rev-parse", "--show-toplevel"], { timeout: 10_000 });
+    return stdout.trim();
+  } catch {
+    return null;
+  }
+}
+
+export async function isGitRepository(dir: string): Promise<boolean> {
+  const root = await findGitRoot(dir);
+  return root !== null;
+}
+
+export async function createWorktree(
+  sessionId: string,
+  baseCwd: string,
+): Promise<WorktreeInfo> {
+  const root = await findGitRoot(baseCwd);
+  if (!root) {
+    return { root: baseCwd, worktree: baseCwd, branch: "", isIsolated: false };
+  }
+
+  const base = sanitize(path.basename(root));
+  const suffix = sanitize(sessionId.slice(0, 8));
+  const branch = `devin-remote/${base}/${suffix}`;
+  const worktreesDir = path.join(root, ".devin-remote", "worktrees");
+  const worktree = path.join(worktreesDir, suffix + "-" + randomUUID().slice(0, 8));
+
+  // Ensure the worktree path is under the repo root.
+  const rel = path.relative(root, worktree);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("worktree path escapes repository root");
+  }
+
+  await fs.mkdir(worktreesDir, { recursive: true });
+
+  // Create branch if it doesn't exist.
+  try {
+    await execFileP("git", ["-C", root, "branch", "--no-track", branch], { timeout: 10_000 });
+  } catch (err: any) {
+    if (!/already exists/i.test(err?.stderr ?? err?.message ?? "")) throw err;
+  }
+
+  await execFileP("git", ["-C", root, "worktree", "add", worktree, branch], { timeout: 30_000 });
+
+  return { root, worktree, branch, isIsolated: true };
+}
+
+export async function cleanupWorktree(worktree: string): Promise<void> {
+  const root = await findGitRoot(worktree);
+  if (!root) return;
+
+  // Safety: refuse to remove worktree with uncommitted changes.
+  try {
+    const { stdout } = await execFileP("git", ["-C", worktree, "status", "--porcelain"], { timeout: 10_000 });
+    if (stdout.trim()) {
+      throw new Error("worktree has uncommitted changes; remove it manually");
+    }
+
+    const { stdout: branchOut } = await execFileP("git", ["-C", worktree, "symbolic-ref", "--short", "HEAD"], { timeout: 10_000 });
+    const branch = branchOut.trim();
+
+    await execFileP("git", ["-C", root, "worktree", "remove", worktree], { timeout: 30_000 });
+
+    if (branch && branch.startsWith("devin-remote/")) {
+      await execFileP("git", ["-C", root, "branch", "-D", branch], { timeout: 10_000 }).catch(() => {});
+    }
+  } catch (err) {
+    throw err;
+  }
+}
+
+export async function listWorktrees(root: string): Promise<string[]> {
+  try {
+    const { stdout } = await execFileP("git", ["-C", root, "worktree", "list", "--porcelain"], { timeout: 10_000 });
+    const out: string[] = [];
+    for (const line of stdout.split("\n")) {
+      if (line.startsWith("worktree ")) {
+        out.push(line.slice("worktree ".length).trim());
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}

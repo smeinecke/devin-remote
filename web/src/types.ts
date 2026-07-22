@@ -1,6 +1,17 @@
-// Protocol types for devin-remote — mirror of the server contract (REST + WS + ACP).
+// Protocol types for devin-remote — REST + WS + ACP.
 
 export type ThemeName = "dark" | "light" | "system";
+
+export type SessionStatus =
+  | "starting"
+  | "loading"
+  | "idle"
+  | "running"
+  | "waiting_for_permission"
+  | "cancelling"
+  | "disconnected"
+  | "failed"
+  | "closed";
 
 export interface Settings {
   theme: ThemeName;
@@ -9,6 +20,7 @@ export interface Settings {
   desktopNotify: boolean;
   defaultModel?: string;
   defaultMode?: string;
+  worktreeIsolation?: boolean;
 }
 
 export interface AppInfo {
@@ -24,10 +36,11 @@ export interface DevinInfo {
 }
 
 export interface ProcessInfo {
+  sessionId: string;
   cwd: string;
-  startedAt: number;
-  exited: boolean;
-  capabilities: { loadSession?: boolean; image?: boolean };
+  status: SessionStatus;
+  processGeneration: number;
+  running: boolean;
 }
 
 export interface MetaResponse {
@@ -44,6 +57,8 @@ export interface SessionSummary {
   cwd: string;
   title: string | null;
   alias: string | null;
+  branch: string | null;
+  worktree: string | null;
   updatedAt: string | null;
 }
 
@@ -180,7 +195,6 @@ export type KnownSessionUpdate =
   | AvailableCommandsUpdate
   | SessionInfoUpdate;
 
-/** Catch-all keeps forward compatibility with agent-specific update kinds. */
 export type SessionUpdate = KnownSessionUpdate | ({ sessionUpdate: string } & Record<string, unknown>);
 
 // ---- WebSocket events -----------------------------------------------------
@@ -191,8 +205,7 @@ export interface PermissionOption {
   kind: string;
 }
 
-export interface PermissionRequestEvent {
-  type: "permission_request";
+export interface PermissionRequestPayload {
   requestId: string;
   sessionId: string;
   toolCall: { title?: string; kind?: string; rawInput?: unknown; [key: string]: unknown };
@@ -205,16 +218,32 @@ export interface PromptDoneResult {
   userMessageId?: string;
 }
 
-export type WsServerEvent =
-  | { type: "config"; app: AppInfo; settings: Settings }
-  | { type: "session_update"; sessionId: string; update: SessionUpdate }
-  | PermissionRequestEvent
-  | { type: "permission_resolved"; requestId: string }
-  | { type: "terminal_output"; terminalId: string; sessionId: string; data: string }
-  | { type: "terminal_exit"; terminalId: string; sessionId: string; exitCode: number | null; signal: string | null }
-  | { type: "agent_log"; sessionId: string; channel: string; message: string; level: string }
-  | { type: "process_status"; cwd: string; status: "exited"; code: number | null }
-  | { type: "prompt_done"; sessionId: string; result: PromptDoneResult };
+export interface ServerEventEnvelope {
+  type: "event";
+  sessionId: string;
+  sequence: number;
+  processGeneration: number;
+  timestamp: number;
+  eventType: string;
+  payload: unknown;
+}
+
+export interface SnapshotEnvelope {
+  type: "snapshot";
+  sessionId: string;
+  processGeneration: number;
+  timestamp: number;
+  state: unknown;
+  events: ServerEventEnvelope[];
+}
+
+export interface WsConfigEvent {
+  type: "config";
+  app: AppInfo;
+  settings: Settings;
+}
+
+export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | WsConfigEvent;
 
 // ---- REST payloads --------------------------------------------------------
 

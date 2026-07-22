@@ -1,35 +1,4 @@
-// Shared event types between the devin-remote server and its web client.
-// Keep in sync with web/src/types.ts.
-
-export interface WsServerEvent {
-  type:
-    | "session_update"
-    | "permission_request"
-    | "permission_resolved"
-    | "terminal_output"
-    | "terminal_exit"
-    | "agent_log"
-    | "process_status"
-    | "prompt_done"
-    | "config";
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [key: string]: any;
-}
-
-export interface PermissionRequestPayload {
-  requestId: string;
-  sessionId: string;
-  toolCall: unknown;
-  options: Array<{ optionId: string; name: string; kind: string }>;
-}
-
-export interface SessionMeta {
-  sessionId: string;
-  cwd: string;
-  title?: string;
-  alias?: string;
-  updatedAt?: string;
-}
+// Shared types for the devin-remote server and its web client.
 
 export interface UsageRecord {
   ts: number;
@@ -41,10 +10,22 @@ export interface UsageRecord {
   model?: string;
 }
 
+export interface SessionMetadata {
+  sessionId: string;
+  cwd: string;
+  title?: string | null;
+  alias?: string | null;
+  branch?: string | null;
+  worktree?: string | null;
+  updatedAt?: string | null;
+  status?: string | null;
+}
+
 export interface StoreShape {
   aliases: Record<string, string>;
   workspaces: string[];
   usage: UsageRecord[];
+  sessions: Record<string, SessionMetadata>;
   settings: {
     theme: "dark" | "light" | "system";
     soundComplete: boolean;
@@ -52,5 +33,46 @@ export interface StoreShape {
     desktopNotify: boolean;
     defaultModel?: string;
     defaultMode?: string;
+    worktreeIsolation?: boolean;
   };
 }
+
+export type SessionStatus =
+  | "starting"
+  | "loading"
+  | "idle"
+  | "running"
+  | "waiting_for_permission"
+  | "cancelling"
+  | "disconnected"
+  | "failed"
+  | "closed";
+
+/** Legacy event shape — replaced by ServerEventEnvelope in v0.4. */
+export interface WsServerEventLegacy {
+  type: string;
+  sessionId?: string;
+  [key: string]: unknown;
+}
+
+/** New envelope sent over WebSocket. */
+export interface ServerEventEnvelope {
+  type: "event";
+  sessionId: string;
+  sequence: number;
+  processGeneration: number;
+  timestamp: number;
+  eventType: string;
+  payload: unknown;
+}
+
+export interface SnapshotEnvelope {
+  type: "snapshot";
+  sessionId: string;
+  processGeneration: number;
+  timestamp: number;
+  state: unknown;
+  events: ServerEventEnvelope[];
+}
+
+export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | { type: "config"; app: { name: string; version: string }; settings: StoreShape["settings"] };

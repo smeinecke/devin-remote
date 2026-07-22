@@ -76,6 +76,24 @@ function RawDetails({ label, raw }: { label: string; raw: unknown }) {
   );
 }
 
+function TerminalOpenButton({ terminalId }: { terminalId: string }) {
+  const { activeSessionId, ui } = useStore();
+  return (
+    <button
+      className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-[0.98]"
+      onClick={() => {
+        const next = activeSessionId
+          ? { ...ui.activeTerminalBySession, [activeSessionId]: terminalId }
+          : ui.activeTerminalBySession;
+        setUi({ terminalOpen: true, activeTerminalBySession: next });
+      }}
+    >
+      <SquareTerminalIcon className="size-3.5" />
+      terminal {terminalId.slice(0, 8)} — view output
+    </button>
+  );
+}
+
 function ContentItem({ item }: { item: ToolCallContent }) {
   if (item.type === "content") {
     const text = (item as { content?: { text?: string } }).content?.text;
@@ -93,13 +111,7 @@ function ContentItem({ item }: { item: ToolCallContent }) {
   if (item.type === "terminal") {
     const tid = (item as { terminalId: string }).terminalId;
     return (
-      <button
-        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-[0.98]"
-        onClick={() => setUi({ terminalOpen: true, activeTerminalId: tid })}
-      >
-        <SquareTerminalIcon className="size-3.5" />
-        terminal {tid.slice(0, 8)} — view output
-      </button>
+      <TerminalOpenButton terminalId={tid} />
     );
   }
   return (

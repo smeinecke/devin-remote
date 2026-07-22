@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { SquareTerminalIcon, XIcon } from "lucide-react";
 
-// Matched to the design tokens (warm surfaces, Devin blue accent cursor).
 const XTERM_THEME = {
   background: "#131316",
   foreground: "#e4e4e7",
@@ -46,7 +45,7 @@ function XTermView({ id, version, resetSeq }: { id: string; version: number; res
       theme: XTERM_THEME,
       scrollback: 10000,
       disableStdin: true,
-      convertEol: false, // output already contains \r\n / ANSI — pass through
+      convertEol: false,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -78,7 +77,6 @@ function XTermView({ id, version, resetSeq }: { id: string; version: number; res
     const term = termRef.current;
     if (!term) return;
     if (resetRef.current !== resetSeq) {
-      // Server-side buffer was trimmed — restart from the trimmed snapshot.
       resetRef.current = resetSeq;
       term.reset();
       writtenRef.current = 0;
@@ -97,13 +95,18 @@ function XTermView({ id, version, resetSeq }: { id: string; version: number; res
 export default function TerminalPanel() {
   const state = useStore();
   const activeId = state.activeSessionId;
-  const all = Object.values(state.terminals);
-  const forSession = activeId ? all.filter((t) => t.sessionId === activeId) : all;
-  const shown = forSession.length > 0 ? forSession : all;
+  const session = activeId ? state.sessions[activeId] : null;
+  const processGeneration = session?.processGeneration ?? 0;
+  const forSession = activeId
+    ? Object.values(state.terminals).filter(
+        (t) => t.sessionId === activeId && t.processGeneration === processGeneration,
+      )
+    : [];
 
+  const selectedId = activeId ? state.ui.activeTerminalBySession[activeId] : null;
   const selected =
-    (state.ui.activeTerminalId && state.terminals[state.ui.activeTerminalId]) ||
-    shown[shown.length - 1] ||
+    (selectedId && forSession.find((t) => t.id === selectedId)) ||
+    forSession[forSession.length - 1] ||
     null;
 
   return (
@@ -111,7 +114,7 @@ export default function TerminalPanel() {
       <div className="flex h-10 flex-none items-center gap-2 border-b border-border px-3">
         <SquareTerminalIcon className="size-3.5 text-muted-foreground" />
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {shown.map((t) => (
+          {forSession.map((t) => (
             <button
               key={t.id}
               className={cn(
@@ -120,7 +123,12 @@ export default function TerminalPanel() {
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
               )}
-              onClick={() => setUi({ activeTerminalId: t.id })}
+              onClick={() => {
+                if (activeId) {
+                  const next = { ...state.ui.activeTerminalBySession, [activeId]: t.id };
+                  setUi({ activeTerminalBySession: next });
+                }
+              }}
             >
               {t.id.slice(0, 8)}
               {t.exitCode !== null && (
@@ -129,7 +137,7 @@ export default function TerminalPanel() {
                     "rounded px-1 py-0.5 text-[10px] font-medium",
                     t.exitCode === 0
                       ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                      : "bg-red-500/15 text-red-600 dark:text-red-400",
+                      : "bg-red-500/15 text-red-600 dark:text-emerald-400",
                   )}
                 >
                   exit {t.exitCode}
@@ -137,7 +145,7 @@ export default function TerminalPanel() {
               )}
             </button>
           ))}
-          {shown.length === 0 && (
+          {forSession.length === 0 && (
             <span className="font-sans text-xs text-muted-foreground">
               No terminals yet — they appear when Devin runs commands.
             </span>

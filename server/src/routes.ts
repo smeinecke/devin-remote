@@ -1,27 +1,21 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
-import type { AcpManager } from "./manager.js";
+import type { SessionRegistry } from "./session-registry.js";
 import type { Store } from "./store.js";
-import type { WsHub } from "./ws.js";
-import type { SessionLog } from "./sessionlog.js";
-import type { DevinAcp } from "./acp.js";
+import type { WsSubscriber } from "./ws-subscriber.js";
+import type { UsageRecord } from "./types.js";
 import { saveUpload, serveUpload, uploadPath } from "./uploads.js";
 import { buildSessionZip } from "./export.js";
-import type { UsageRecord } from "./types.js";
+import { isGitRepository, createWorktree, cleanupWorktree } from "./worktree.js";
 
 export interface ApiContext {
   store: Store;
-  manager: AcpManager;
-  hub: WsHub;
-  sessionLog: SessionLog;
+  registry: SessionRegistry;
+  ws: WsSubscriber;
   appVersion: string;
   primaryCwd: string;
   devinCheck: () => Promise<unknown>;
-  /** sessionId → workspace cwd (learned from list/new/load). */
-  sessionCwd: Map<string, string>;
-  /** permission requestId → owning acp process. */
-  permissionOwner: Map<string, DevinAcp>;
 }
 
 function json(res: ServerResponse, status: number, body: unknown) {
@@ -46,7 +40,6 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return JSON.parse(buf.toString("utf8"));
 }
 
-/** Replace uploadId references with real base64 data for ACP image blocks. */
 async function normalizeBlocks(store: Store, blocks: unknown[]): Promise<ContentBlock[]> {
   const out: ContentBlock[] = [];
   for (const raw of blocks) {
@@ -65,12 +58,13 @@ async function normalizeBlocks(store: Store, blocks: unknown[]): Promise<Content
   return out;
 }
 
-async function acpForSession(ctx: ApiContext, sessionId: string, cwd?: string) {
-  const dir = cwd ?? ctx.sessionCwd.get(sessionId);
-  if (!dir) throw Object.assign(new Error("unknown session — pass cwd"), { status: 400 });
-  const acp = await ctx.manager.get(dir);
-  ctx.sessionCwd.set(sessionId, dir);
-  return acp;
+function requireController(ctx: ApiContext, sessionId: string, cwd?: string) {
+  const c = ctx.registry.get(sessionId);
+  if (!c) throw Object.assign(new Error("unknown session"), { status: 404 });
+  if (cwd && c.cwd !== cwd) {
+    // Cwd mismatch is a warning but not fatal; the controller is authoritative.
+  }
+  return c;
 }
 
 export async function handleApi(
@@ -80,128 +74,153 @@ export async function handleApi(
   url: URL,
 ): Promise<void> {
   const m = req.method ?? "GET";
-  const parts = url.pathname.split("/").filter(Boolean); // ["api", ...]
+  const parts = url.pathname.split("/").filter(Boolean);
 
   try {
-    // GET /api/meta
     if (m === "GET" && url.pathname === "/api/meta") {
       return json(res, 200, {
         app: { name: "devin-remote", version: ctx.appVersion },
         devin: await ctx.devinCheck(),
         workspaces: ctx.store.workspaces(),
-        processes: ctx.manager.status(),
+        processes: ctx.registry.status(),
         settings: ctx.store.settings,
         primaryCwd: ctx.primaryCwd,
       });
     }
 
-    // GET /api/sessions — global session list via the primary workspace process.
     if (m === "GET" && url.pathname === "/api/sessions") {
-      const acp = await ctx.manager.get(ctx.primaryCwd);
-      const aliases = ctx.store.aliases();
-      const sessions: unknown[] = [];
-      let cursor: string | undefined;
-      do {
-        const page = await acp.listSessions(cursor);
-        for (const s of page.sessions) {
-          ctx.sessionCwd.set(s.sessionId, s.cwd);
-          sessions.push({
-            sessionId: s.sessionId,
-            cwd: s.cwd,
-            title: s.title ?? null,
-            alias: aliases[s.sessionId] ?? null,
-            updatedAt: (s as { updatedAt?: string }).updatedAt ?? null,
-          });
-        }
-        cursor = page.nextCursor ?? undefined;
-      } while (cursor && sessions.length < 2000);
+      const remote = await ctx.registry.listRemote(ctx.primaryCwd);
+      const sessions = [];
+      for (const s of remote.sessions ?? []) {
+        ctx.store.ensureSession(s.sessionId, { cwd: s.cwd, title: s.title ?? null });
+        sessions.push({
+          sessionId: s.sessionId,
+          cwd: s.cwd,
+          title: s.title ?? null,
+          alias: ctx.store.alias(s.sessionId) ?? null,
+          branch: ctx.store.session(s.sessionId)?.branch ?? null,
+          worktree: ctx.store.session(s.sessionId)?.worktree ?? null,
+          updatedAt: (s as { updatedAt?: string }).updatedAt ?? null,
+        });
+      }
       return json(res, 200, { sessions });
     }
 
-    // POST /api/sessions {cwd}
     if (m === "POST" && url.pathname === "/api/sessions") {
       const body = await readJson(req);
-      const cwd = String(body.cwd ?? ctx.primaryCwd);
-      const acp = await ctx.manager.get(cwd);
-      ctx.store.addWorkspace(cwd);
-      const s = await acp.newSession(cwd);
-      ctx.sessionCwd.set(s.sessionId, cwd);
-      return json(res, 200, {
-        sessionId: s.sessionId,
+      let cwd = String(body.cwd ?? ctx.primaryCwd);
+      const isolate = ctx.store.settings.worktreeIsolation && (body.isolate !== false);
+
+      const gitRoot = await isGitRepository(cwd);
+      let worktreeInfo = { root: cwd, worktree: cwd, branch: "", isIsolated: false };
+      if (gitRoot && isolate) {
+        const tempId = `new-${Date.now().toString(36)}`;
+        worktreeInfo = await createWorktree(tempId, cwd);
+        cwd = worktreeInfo.worktree;
+      }
+
+      const created = await ctx.registry.create(cwd);
+      ctx.store.addWorkspace(worktreeInfo.root);
+      ctx.store.ensureSession(created.sessionId, {
         cwd,
-        modes: (s as { modes?: unknown }).modes ?? null,
+        title: null,
+        branch: worktreeInfo.branch || null,
+        worktree: worktreeInfo.worktree,
+      });
+
+      return json(res, 200, {
+        sessionId: created.sessionId,
+        cwd,
+        branch: worktreeInfo.branch || null,
+        worktree: worktreeInfo.worktree,
+        modes: created.modes ?? null,
       });
     }
 
-    // /api/sessions/:id/...
     if (parts[1] === "sessions" && parts.length >= 4) {
       const id = decodeURIComponent(parts[2]);
       const action = parts[3];
+      const c = requireController(ctx, id);
 
       if (m === "POST" && action === "open") {
-        const body = await readJson(req);
-        const acp = await acpForSession(ctx, id, body.cwd as string | undefined);
-        await acp.loadSession(id, acp.cwd);
-        return json(res, 200, { ok: true });
+        await ctx.registry.attach(id, c.cwd, {
+          title: c.title,
+          alias: c.alias,
+          branch: c.branch,
+          worktree: c.worktree,
+        });
+        return json(res, 200, {
+          ok: true,
+          status: c.currentStatus,
+          processGeneration: c.processGeneration,
+          branch: c.branch,
+          worktree: c.worktree,
+        });
+      }
+
+      if (m === "POST" && action === "attach") {
+        await ctx.registry.attach(id, c.cwd, {
+          title: c.title,
+          alias: c.alias,
+          branch: c.branch,
+          worktree: c.worktree,
+        });
+        return json(res, 200, {
+          ok: true,
+          status: c.currentStatus,
+          processGeneration: c.processGeneration,
+        });
       }
 
       if (m === "POST" && action === "prompt") {
         const body = await readJson(req);
         const blocks = await normalizeBlocks(ctx.store, (body.blocks as unknown[]) ?? []);
         if (blocks.length === 0) return json(res, 400, { error: "empty prompt" });
-        const acp = await acpForSession(ctx, id, body.cwd as string | undefined);
-        // Mirror the user message into the session log for export/replay.
-        for (const b of blocks) {
-          if (b.type === "text") {
-            ctx.sessionLog.append(id, {
-              sessionUpdate: "user_message_chunk",
-              content: { type: "text", text: (b as { text: string }).text },
-            });
-          }
-        }
-        const done = await acp.prompt(id, blocks);
+        await ctx.registry.attach(id, c.cwd);
+        const done = await c.prompt(blocks);
         const usage = (done as { usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number } }).usage;
         if (usage?.totalTokens) {
           const rec: UsageRecord = {
             ts: Date.now(),
             sessionId: id,
-            cwd: acp.cwd,
+            cwd: c.cwd,
             inputTokens: usage.inputTokens ?? 0,
             outputTokens: usage.outputTokens ?? 0,
             totalTokens: usage.totalTokens,
           };
           ctx.store.recordUsage(rec);
         }
-        ctx.hub.broadcast({ type: "prompt_done", sessionId: id, result: done });
         return json(res, 200, done);
       }
 
       if (m === "POST" && action === "cancel") {
-        const body = await readJson(req);
-        const acp = await acpForSession(ctx, id, body.cwd as string | undefined);
-        await acp.cancel(id);
+        await c.cancel();
         return json(res, 200, { ok: true });
       }
 
       if (m === "POST" && action === "rename") {
         const body = await readJson(req);
         const title = String(body.title ?? "").trim();
-        const acp = await acpForSession(ctx, id, body.cwd as string | undefined);
+        const remote = title ? await c.rename(title) : false;
         ctx.store.setAlias(id, title);
-        const remote = title ? await acp.renameSession(id, title) : false;
         return json(res, 200, { ok: true, remote });
       }
 
       if (m === "POST" && action === "config") {
         const body = await readJson(req);
-        const acp = await acpForSession(ctx, id, body.cwd as string | undefined);
-        const result = await acp.setConfigOption(id, String(body.configId), String(body.value));
+        const result = await c.setConfig(String(body.configId), String(body.value));
         return json(res, 200, result ?? { ok: true });
       }
 
+      if (m === "POST" && action === "close") {
+        ctx.registry.close(id);
+        return json(res, 200, { ok: true });
+      }
+
       if (m === "GET" && action === "export") {
-        const zip = buildSessionZip(ctx.sessionLog, id, {
-          cwd: ctx.sessionCwd.get(id) ?? null,
+        const events = ctx.registry.eventBus.replay(id, c.processGeneration, 0) ?? [];
+        const zip = buildSessionZipFromEvents(events, id, {
+          cwd: c.cwd,
           alias: ctx.store.alias(id) ?? null,
           app: `devin-remote ${ctx.appVersion}`,
         });
@@ -215,35 +234,34 @@ export async function handleApi(
       }
 
       if (m === "GET" && action === "history") {
-        return json(res, 200, { updates: ctx.sessionLog.get(id).map((e) => e.update) });
+        const events = ctx.registry.eventBus.replay(id, c.processGeneration, 0) ?? [];
+        return json(res, 200, { updates: events.filter((e) => e.type === "session_update").map((e) => e.payload) });
+      }
+
+      if (m === "POST" && action === "cleanup-worktree") {
+        const wt = ctx.store.session(id)?.worktree;
+        if (wt) await cleanupWorktree(wt);
+        return json(res, 200, { ok: true });
       }
     }
 
-    // POST /api/permissions/:requestId {optionId | null}
     if (m === "POST" && parts[1] === "permissions" && parts.length === 3) {
       const requestId = decodeURIComponent(parts[2]);
       const body = await readJson(req);
-      const owner = ctx.permissionOwner.get(requestId);
-      if (!owner) return json(res, 404, { error: "permission request expired" });
-      const ok = owner.resolvePermission(requestId, (body.optionId as string | null) ?? null);
-      ctx.permissionOwner.delete(requestId);
-      ctx.hub.broadcast({ type: "permission_resolved", requestId });
-      return json(res, ok ? 200 : 410, { ok });
+      const ok = ctx.registry.resolvePermission(requestId, (body.optionId as string | null) ?? null);
+      return json(res, ok ? 200 : 404, { ok });
     }
 
-    // POST /api/uploads?filename=... (raw binary body)
     if (m === "POST" && url.pathname === "/api/uploads") {
       const filename = url.searchParams.get("filename") ?? "file";
       const meta = await saveUpload(req, ctx.store, filename);
       return json(res, 200, { ...meta, url: `/api/uploads/${encodeURIComponent(meta.id)}` });
     }
 
-    // GET /api/uploads/:id
     if (m === "GET" && parts[1] === "uploads" && parts.length === 3) {
       return serveUpload(ctx.store, decodeURIComponent(parts[2]), res);
     }
 
-    // GET /api/usage
     if (m === "GET" && url.pathname === "/api/usage") {
       const records = ctx.store.usage();
       const byDay: Record<string, { inputTokens: number; outputTokens: number; totalTokens: number; turns: number }> = {};
@@ -265,7 +283,6 @@ export async function handleApi(
       });
     }
 
-    // GET/PUT /api/settings
     if (url.pathname === "/api/settings") {
       if (m === "GET") return json(res, 200, ctx.store.settings);
       if (m === "PUT" || m === "POST") {
@@ -279,4 +296,13 @@ export async function handleApi(
     const status = (err as { status?: number }).status ?? 500;
     json(res, status, { error: err instanceof Error ? err.message : String(err) });
   }
+}
+
+function buildSessionZipFromEvents(events: any[], sessionId: string, meta: { cwd: string | null; alias: string | null; app: string }): Uint8Array {
+  // Reuse the existing exporter on the raw session-update payloads.
+  const log = {
+    append: () => {},
+    get: () => events.filter((e) => e.type === "session_update").map((e) => ({ ts: e.timestamp ?? Date.now(), update: e.payload })),
+  };
+  return buildSessionZip(log as any, sessionId, meta);
 }

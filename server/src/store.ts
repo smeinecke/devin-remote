@@ -2,17 +2,19 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
-import type { StoreShape, UsageRecord } from "./types.js";
+import type { StoreShape, UsageRecord, SessionMetadata } from "./types.js";
 
 const DEFAULTS: StoreShape = {
   aliases: {},
   workspaces: [],
   usage: [],
+  sessions: {},
   settings: {
     theme: "dark",
     soundComplete: true,
     soundNotify: true,
     desktopNotify: false,
+    worktreeIsolation: true,
   },
 };
 
@@ -32,7 +34,6 @@ export class Store {
       process.env.DEVIN_REMOTE_HOME ??
       process.env.DEVIN_CONSOLE_HOME ??
       path.join(os.homedir(), ".devin-remote");
-    // One-time migration from the pre-0.3 data dir.
     const legacy = path.join(os.homedir(), ".devin-console");
     if (!process.env.DEVIN_REMOTE_HOME && !fs.existsSync(this.dataDir) && fs.existsSync(legacy)) {
       fs.cpSync(legacy, this.dataDir, { recursive: true });
@@ -40,17 +41,17 @@ export class Store {
     this.uploadsDir = path.join(this.dataDir, "uploads");
     this.file = path.join(this.dataDir, "store.json");
     fs.mkdirSync(this.uploadsDir, { recursive: true });
-    // Sweep temp files left by writes interrupted before their rename.
     for (const f of fs.readdirSync(this.dataDir)) {
       if (f.startsWith("store.json.") && f.endsWith(".tmp")) {
         try {
           fs.unlinkSync(path.join(this.dataDir, f));
         } catch {
-          /* already gone */
+          /* */
         }
       }
     }
     this.data = this.load();
+    this.migrate();
   }
 
   private load(): StoreShape {
@@ -60,10 +61,33 @@ export class Store {
         ...DEFAULTS,
         ...raw,
         settings: { ...DEFAULTS.settings, ...(raw.settings ?? {}) },
+        sessions: { ...DEFAULTS.sessions, ...(raw.sessions ?? {}) },
       };
     } catch {
       return structuredClone(DEFAULTS);
     }
+  }
+
+  private migrate() {
+    // Legacy aliases/workspaces did not have a sessions record. v0.4 stores
+    // per-session metadata (worktree, branch, status) here.
+    let changed = false;
+    for (const [id, alias] of Object.entries(this.data.aliases)) {
+      if (!this.data.sessions[id]) {
+        this.data.sessions[id] = {
+          sessionId: id,
+          cwd: this.data.workspaces[0] ?? "",
+          alias: alias || null,
+          title: null,
+          branch: null,
+          worktree: null,
+          updatedAt: null,
+          status: null,
+        };
+        changed = true;
+      }
+    }
+    if (changed) this.persist();
   }
 
   private save() {
@@ -74,11 +98,6 @@ export class Store {
     }, 250);
   }
 
-  /**
-   * Atomic write: unique temp file + rename, serialized on a chain. A direct
-   * writeFile can be read back torn (crash mid-write), and a shared temp path
-   * lets two overlapping writes rename half-written JSON into place.
-   */
   private persist() {
     const json = JSON.stringify(this.data, null, 2);
     const tmp = `${this.file}.${process.pid}.${++this.tmpSeq}.tmp`;
@@ -107,7 +126,7 @@ export class Store {
       try {
         fs.unlinkSync(tmp);
       } catch {
-        /* nothing to clean */
+        /* */
       }
     }
   }
@@ -129,6 +148,8 @@ export class Store {
   setAlias(sessionId: string, title: string) {
     if (title) this.data.aliases[sessionId] = title;
     else delete this.data.aliases[sessionId];
+    this.ensureSession(sessionId);
+    this.data.sessions[sessionId]!.alias = title || null;
     this.save();
   }
 
@@ -145,6 +166,35 @@ export class Store {
       this.data.workspaces.push(cwd);
       this.save();
     }
+  }
+
+  session(sessionId: string): SessionMetadata | undefined {
+    return this.data.sessions[sessionId];
+  }
+
+  ensureSession(sessionId: string, defaults?: Partial<SessionMetadata>) {
+    if (!this.data.sessions[sessionId]) {
+      this.data.sessions[sessionId] = {
+        sessionId,
+        cwd: defaults?.cwd ?? "",
+        title: defaults?.title ?? null,
+        alias: defaults?.alias ?? this.data.aliases[sessionId] ?? null,
+        branch: defaults?.branch ?? null,
+        worktree: defaults?.worktree ?? null,
+        updatedAt: defaults?.updatedAt ?? null,
+        status: defaults?.status ?? null,
+      };
+      this.save();
+    } else if (defaults) {
+      Object.assign(this.data.sessions[sessionId]!, defaults);
+      this.save();
+    }
+  }
+
+  setSession(sessionId: string, patch: Partial<SessionMetadata>) {
+    this.ensureSession(sessionId);
+    Object.assign(this.data.sessions[sessionId]!, patch);
+    this.save();
   }
 
   recordUsage(rec: UsageRecord) {

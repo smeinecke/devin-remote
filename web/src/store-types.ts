@@ -1,9 +1,8 @@
-// View-state shapes for the client store (kept apart from protocol types).
-
 import type {
   ConfigOption,
   MetaResponse,
   PlanEntry,
+  SessionStatus,
   SessionSummary,
   SessionUpdate,
   Settings,
@@ -12,6 +11,8 @@ import type {
   ToolCallLocation,
   ToolCallStatus,
 } from "./types";
+
+export type { Settings, ToolCallContent };
 
 export interface Attachment {
   id: string;
@@ -38,12 +39,44 @@ export interface ToolCallState {
   locations?: ToolCallLocation[];
   rawInput?: unknown;
   rawOutput?: unknown;
-  /** Client-side wall-clock timing, for the duration badge on tool cards. */
   startedAt: number;
   finishedAt: number | null;
 }
 
-export type TimelineItem = { kind: "message" | "tool"; id: string };
+export interface AgentRun {
+  id: string;
+  sessionId: string;
+  userMessageId: string;
+  status: "running" | "waiting_for_permission" | "completed" | "cancelled" | "failed";
+  startedAt: number;
+  completedAt?: number;
+  activities: AgentActivity[];
+  finalMessageId?: string;
+}
+
+export type ActivityType =
+  | "plan"
+  | "file_read"
+  | "file_edit"
+  | "command"
+  | "terminal"
+  | "test"
+  | "permission"
+  | "subagent"
+  | "error";
+
+export interface AgentActivity {
+  id: string;
+  type: ActivityType;
+  title: string;
+  status: "pending" | "in_progress" | "completed" | "failed" | "cancelled";
+  startedAt: number;
+  completedAt?: number;
+  details?: unknown;
+  autoExpand?: boolean;
+}
+
+export type TimelineItem = { kind: "message" | "tool" | "run"; id: string };
 
 export interface PendingPermission {
   requestId: string;
@@ -51,15 +84,28 @@ export interface PendingPermission {
   options: Array<{ optionId: string; name: string; kind: string }>;
 }
 
+export interface TerminalState {
+  terminalId: string;
+  sessionId: string;
+  processGeneration: number;
+  status: "running" | "exited" | "killed" | "failed";
+  command?: string;
+}
+
 export interface SessionState {
   sessionId: string;
   cwd: string;
   title: string | null;
   alias: string | null;
+  branch: string | null;
+  worktree: string | null;
   updatedAt: string | null;
+  processGeneration: number;
+  status: SessionStatus;
   timeline: TimelineItem[];
   messages: Record<string, ChatMessage>;
   toolCalls: Record<string, ToolCallState>;
+  runs: Record<string, AgentRun>;
   plan: PlanEntry[] | null;
   usage: { used: number; size: number } | null;
   configOptions: ConfigOption[];
@@ -67,9 +113,8 @@ export interface SessionState {
   availableCommands: SlashCommand[];
   permissions: PendingPermission[];
   running: boolean;
-  /** True once history + live stream have been reconciled for display. */
   synced: boolean;
-  /** Ids of the currently-open streaming bubbles, per role. */
+  unread: boolean;
   openAgentMsg: string | null;
   openThoughtMsg: string | null;
   openUserMsg: string | null;
@@ -80,10 +125,9 @@ export interface TerminalMeta {
   sessionId: string;
   exitCode: number | null;
   signal: string | null;
-  /** Bumped on every output chunk — drives xterm writes. */
   version: number;
-  /** Bumped when the buffer is trimmed; xterm must reset and rewrite. */
   resetSeq: number;
+  processGeneration: number;
 }
 
 export interface AgentLogEntry {
@@ -99,9 +143,11 @@ export interface UiState {
   modal: null | "settings" | "usage" | "palette";
   terminalOpen: boolean;
   logOpen: boolean;
-  activeTerminalId: string | null;
-  /** Lifts the model dialog so both header and composer can open it. */
+  inspectorTab: "changes" | "terminal" | "files" | "logs" | "plan";
+  inspectorOpen: boolean;
+  activeTerminalBySession: Record<string, string | null>;
   modelPickerOpen: boolean;
+  mobileDetail: null | "activity" | "changes" | "terminal";
 }
 
 export interface AppState {
@@ -119,5 +165,4 @@ export interface AppState {
   ui: UiState;
 }
 
-// Re-exported so the store module can build updates without extra imports.
 export type { SessionSummary, SessionUpdate };

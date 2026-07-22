@@ -6,12 +6,10 @@ import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { AcpManager } from "./manager.js";
 import { Store } from "./store.js";
-import { WsHub } from "./ws.js";
-import { SessionLog } from "./sessionlog.js";
+import { WsSubscriber } from "./ws-subscriber.js";
+import { SessionRegistry } from "./session-registry.js";
 import { handleApi, type ApiContext } from "./routes.js";
-import type { WsServerEvent } from "./types.js";
 
 const execFileP = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,20 +50,11 @@ Options:
 Requires: devin CLI on PATH and a completed 'devin auth login'.
 Data:   ~/.devin-remote (override with DEVIN_REMOTE_HOME)
 Env:    DEVIN_REMOTE_ALLOWED_HOSTS — comma-separated extra hostnames allowed
-        by the CSRF/DNS-rebinding guard (reverse proxies, tailscale serve, …)`);
+        by the CSRF/DNS-rebinding guard (reverse proxies, tailnet serve, …)`);
   process.exit(0);
 }
 
 // ---- CSRF / DNS-rebinding guard --------------------------------------------
-// Without this, any web page could fire fetch()/WebSocket at 127.0.0.1:7781
-// and drive Devin (send prompts, blind-approve permission requests).
-// Host check (rebinding): allowlisted names or IP literals only. Origin check
-// (CSRF): must match the request Host — including the port when both sides
-// state one, so an app on another port of the same machine can't drive this
-// one — or be explicitly allowlisted via DEVIN_REMOTE_ALLOWED_HOSTS (for
-// Host-rewriting reverse proxies and tunnels).
-
-/** Lowercased {hostname, explicit port} of a bare host, host:port, or origin — null if unparseable. */
 function hostParts(value: string | undefined): { host: string; port: string } | null {
   if (!value) return null;
   let v = value.trim().toLowerCase();
@@ -74,8 +63,6 @@ function hostParts(value: string | undefined): { host: string; port: string } | 
   if (!hadScheme) v = `http://${v}`;
   try {
     const u = new URL(v);
-    // For real origins resolve the scheme's default port; a bare Host header
-    // keeps "" (its scheme is unknowable behind a TLS-terminating proxy).
     const port = u.port || (hadScheme ? (u.protocol === "https:" ? "443" : "80") : "");
     return { host: u.hostname.replace(/^\[|\]$/g, ""), port };
   } catch {
@@ -88,7 +75,6 @@ const allowedHostnames = new Set(["localhost", "127.0.0.1", "::1", os.hostname()
   const bound = hostParts(HOST);
   if (bound && bound.host !== "0.0.0.0" && bound.host !== "::") allowedHostnames.add(bound.host);
 }
-/** User-declared proxy/tunnel names: valid as Host and as a non-matching Origin. */
 const extraAllowedHostnames = new Set<string>();
 for (const extra of (process.env.DEVIN_REMOTE_ALLOWED_HOSTS ?? "").split(",")) {
   const p = hostParts(extra);
@@ -101,17 +87,13 @@ for (const extra of (process.env.DEVIN_REMOTE_ALLOWED_HOSTS ?? "").split(",")) {
 function isAllowedRequest(req: http.IncomingMessage): boolean {
   const host = hostParts(req.headers.host);
   if (!host) return false;
-  // IP-literal Hosts can't be a DNS-rebinding vector (the attack needs the
-  // attacker's DNS name in Host); other names must be explicitly allowed.
   if (!allowedHostnames.has(host.host) && net.isIP(host.host) === 0) return false;
   const origin = req.headers.origin;
-  if (origin === undefined) return true; // same-origin fetch / non-browser client
+  if (origin === undefined) return true;
   const o = hostParts(String(origin));
-  if (!o) return false; // includes "Origin: null"
+  if (!o) return false;
   if (extraAllowedHostnames.has(o.host)) return true;
   if (o.host !== host.host) return false;
-  // Portless Host (behind a proxy) accepts the default-port origin forms;
-  // an explicit Host port must match the origin's exactly.
   if (host.port === "") return o.port === "80" || o.port === "443";
   return o.port === host.port;
 }
@@ -143,15 +125,21 @@ async function devinCheck(): Promise<DevinCheck> {
 
 // ---- wiring ----------------------------------------------------------------
 const store = new Store();
-const sessionLog = new SessionLog();
-const sessionCwd = new Map<string, string>();
-const permissionOwner = new Map<string, import("./acp.js").DevinAcp>();
 const primaryCwd = process.cwd();
+
+const registry = new SessionRegistry({
+  onEvent: (_sessionId, envelope) => {
+    // Events are dispatched through the EventBus and WebSocket in WsSubscriber.
+    void envelope;
+  },
+});
 
 const httpServer = http.createServer();
 
-const hub = new WsHub(
+const ws = new WsSubscriber(
   httpServer,
+  registry,
+  registry.eventBus,
   () => ({
     type: "config",
     app: { name: "devin-remote", version: pkg.version },
@@ -160,46 +148,13 @@ const hub = new WsHub(
   { verifyOrigin: isAllowedRequest },
 );
 
-const manager = new AcpManager({
-  onSessionUpdate: (sessionId, update) => {
-    sessionLog.append(sessionId, update as Record<string, unknown>);
-    hub.broadcast({ type: "session_update", sessionId, update });
-  },
-  onAgentLog: (sessionId, channel, message, level) => {
-    hub.broadcast({ type: "agent_log", sessionId, channel, message, level });
-  },
-  onPermissionRequest: (requestId, sessionId, toolCall, options) => {
-    hub.broadcast({ type: "permission_request", requestId, sessionId, toolCall, options });
-  },
-  onPermissionOwner: (requestId, owner) => {
-    permissionOwner.set(requestId, owner);
-  },
-  onPermissionResolved: (requestId) => {
-    // Timed out or the process died — tell clients so stale cards disappear.
-    permissionOwner.delete(requestId);
-    hub.broadcast({ type: "permission_resolved", requestId });
-  },
-  onTerminalOutput: (terminalId, sessionId, data) => {
-    hub.broadcast({ type: "terminal_output", terminalId, sessionId, data });
-  },
-  onTerminalExit: (terminalId, sessionId, exitCode, signal) => {
-    hub.broadcast({ type: "terminal_exit", terminalId, sessionId, exitCode, signal });
-  },
-  onExit: (cwd, code) => {
-    hub.broadcast({ type: "process_status", cwd, status: "exited", code });
-  },
-});
-
 const ctx: ApiContext = {
   store,
-  manager,
-  hub,
-  sessionLog,
+  registry,
+  ws,
   appVersion: pkg.version,
   primaryCwd,
   devinCheck,
-  sessionCwd,
-  permissionOwner,
 };
 
 // ---- static files ----------------------------------------------------------
@@ -230,14 +185,13 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: U
     return;
   }
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-    file = path.join(webDir, "index.html"); // SPA fallback
+    file = path.join(webDir, "index.html");
   }
   const ext = path.extname(file).toLowerCase();
   const mime = STATIC_MIME[ext] ?? "application/octet-stream";
 
   const send = (p: string, headers: http.OutgoingHttpHeaders) => {
     const stream = fs.createReadStream(p);
-    // A file swapped/removed mid-request (e.g. rebuild) must not crash the process.
     stream.on("error", () => {
       if (!res.headersSent) res.writeHead(500).end();
       else res.destroy();
@@ -248,7 +202,6 @@ function serveStatic(req: http.IncomingMessage, res: http.ServerResponse, url: U
     });
   };
 
-  // Serve pre-compressed assets (scripts/compress.mjs) when the client accepts them.
   const accept = String(req.headers["accept-encoding"] ?? "");
   for (const [enc, suffix] of [["br", ".br"], ["gzip", ".gz"]] as const) {
     if (accept.includes(enc) && fs.existsSync(file + suffix)) {
@@ -265,9 +218,7 @@ httpServer.on("request", (req, res) => {
     if (url.pathname.startsWith("/api/")) {
       if (!isAllowedRequest(req)) {
         res.writeHead(403, { "content-type": "application/json" }).end(
-          JSON.stringify({
-            error: "forbidden origin/host — set DEVIN_REMOTE_ALLOWED_HOSTS for reverse proxies and tunnels",
-          }),
+          JSON.stringify({ error: "forbidden origin/host — set DEVIN_REMOTE_ALLOWED_HOSTS for reverse proxies and tunnels" }),
         );
         return;
       }
@@ -276,8 +227,6 @@ httpServer.on("request", (req, res) => {
       serveStatic(req, res, url);
     }
   } catch {
-    // Malformed requests (bad % escapes, bogus Host) must never take down the
-    // process — an uncaught throw in this handler kills the whole server.
     if (!res.headersSent) res.writeHead(400).end("bad request");
     else res.destroy();
   }
@@ -301,7 +250,7 @@ httpServer.listen(PORT, HOST, async () => {
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
-    manager.killAll();
+    registry.killAll();
     store.flush();
     process.exit(0);
   });
