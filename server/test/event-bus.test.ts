@@ -33,6 +33,25 @@ describe("EventBus", () => {
     assert.strictEqual(snap.events[0].sequence, 1);
   });
 
+  it("snapshot declares complete/materialized semantics", () => {
+    const bus = new EventBus();
+    bus.emit("s1", 1, "a", { v: 1 });
+    const snap = bus.snapshot("s1", 1, { latestSequence: 1 }) as any;
+    assert.strictEqual(snap.complete, false);
+    assert.strictEqual(snap.baseSequence, 1);
+    assert.strictEqual(snap.latestSequence, 1);
+    assert.strictEqual(snap.state, snap.state);
+  });
+
+  it("snapshot is empty and reports latestSequence 0 when no buffer exists", () => {
+    const bus = new EventBus();
+    const snap = bus.snapshot("s1", 1, { status: "idle" }) as any;
+    assert.strictEqual(snap.events.length, 0);
+    assert.strictEqual(snap.baseSequence, null);
+    assert.strictEqual(snap.latestSequence, 0);
+    assert.strictEqual(snap.complete, false);
+  });
+
   it("reset increments generation and starts new sequence", () => {
     const bus = new EventBus();
     bus.emit("s1", 1, "a", {});

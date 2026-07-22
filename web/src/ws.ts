@@ -20,7 +20,13 @@ export function startWs(): void {
   connect();
 }
 
-export function setCursor(sessionId: string, processGeneration: number, after: number): void {
+/** Update the local replay cursor without sending a subscribe message. */
+export function updateCursor(sessionId: string, processGeneration: number, after: number): void {
+  cursors.set(sessionId, { processGeneration, after });
+}
+
+/** Subscribe (or resubscribe) a session and update the local cursor. */
+export function subscribeSession(sessionId: string, processGeneration: number, after: number): void {
   const cursor = { processGeneration, after };
   cursors.set(sessionId, cursor);
   if (ws?.readyState === WebSocket.OPEN) {

@@ -20,6 +20,8 @@ export interface WorktreeInfo {
   worktree: string;
   branch: string;
   isIsolated: boolean;
+  /** Base commit the branch was created from, when isolated. */
+  baseCommit?: string;
 }
 
 function sanitize(input: string): string {
@@ -51,7 +53,7 @@ export async function createWorktree(
 ): Promise<WorktreeInfo> {
   const root = await findGitRoot(baseCwd);
   if (!root) {
-    return { root: baseCwd, worktree: baseCwd, branch: "", isIsolated: false };
+    return { root: baseCwd, worktree: baseCwd, branch: "", isIsolated: false, baseCommit: "" };
   }
 
   const base = sanitize(path.basename(root));
@@ -74,7 +76,7 @@ export async function createWorktree(
 
   await execFileP("git", ["-C", root, "worktree", "add", "-b", branch, worktree, baseCommit], { timeout: 30_000 });
 
-  return { root, worktree, branch, isIsolated: true };
+  return { root, worktree, branch, isIsolated: true, baseCommit };
 }
 
 export async function cleanupWorktree(worktree: string): Promise<void> {
@@ -88,6 +90,26 @@ export async function cleanupWorktree(worktree: string): Promise<void> {
   }
 
   await execFileP("git", ["-C", root, "worktree", "remove", worktree], { timeout: 30_000 });
+}
+
+/**
+ * Roll back a worktree that was just created and never used. Removes the
+ * worktree and deletes its branch only if the branch still points to the
+ * original base commit.
+ */
+export async function rollbackCreatedWorktree(info: WorktreeInfo): Promise<void> {
+  if (!info.isIsolated || !info.baseCommit) return;
+
+  await cleanupWorktree(info.worktree).catch((err) => console.error("rollback cleanup failed:", err));
+
+  try {
+    const { stdout } = await execFileP("git", ["-C", info.root, "rev-parse", info.branch], { timeout: 10_000 });
+    if (stdout.trim() === info.baseCommit) {
+      await execFileP("git", ["-C", info.root, "branch", "-D", info.branch], { timeout: 10_000 });
+    }
+  } catch {
+    // Branch may already be gone; ignore.
+  }
 }
 
 export async function listWorktrees(root: string): Promise<string[]> {

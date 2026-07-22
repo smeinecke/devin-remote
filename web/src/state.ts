@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { api } from "./api";
-import { setCursor, cursors } from "./ws";
+import { subscribeSession, updateCursor, cursors } from "./ws";
 import { notifyDesktop, soundComplete, soundNotify } from "./sound";
 import type {
   Attachment,
@@ -11,6 +11,7 @@ import type {
   SessionSummary,
   SessionUpdate,
   Settings,
+  TerminalMeta,
   ToolCallContent,
   ToolCallState,
 } from "./store-types";
@@ -208,7 +209,7 @@ export async function createSession(cwd: string): Promise<void> {
       d.status = "idle";
     });
     setState({ activeSessionId: res.sessionId, ui: { ...state.ui, sidebarOpen: false } });
-    setCursor(res.sessionId, res.processGeneration, 0);
+    subscribeSession(res.sessionId, res.processGeneration, 0);
     const { defaultModel, defaultMode } = state.settings;
     if (defaultMode) void api.setConfig(res.sessionId, "mode", defaultMode).catch(() => undefined);
     if (defaultModel) void api.setConfig(res.sessionId, "model", defaultModel).catch(() => undefined);
@@ -222,7 +223,7 @@ export async function selectSession(sessionId: string): Promise<void> {
   if (!s) return;
   setState({ activeSessionId: sessionId, ui: { ...state.ui, sidebarOpen: false } });
   if (s.synced) {
-    setCursor(sessionId, s.processGeneration, latestSequenceFor(sessionId));
+    subscribeSession(sessionId, s.processGeneration, latestSequenceFor(sessionId));
     return;
   }
   // Idempotent attach: does not reload a running session.
@@ -235,7 +236,7 @@ export async function selectSession(sessionId: string): Promise<void> {
       d.branch = open.branch ?? d.branch;
       d.worktree = open.worktree ?? d.worktree;
     });
-    setCursor(sessionId, open.processGeneration, 0);
+    subscribeSession(sessionId, open.processGeneration, 0);
   } catch (err) {
     showNotice(err instanceof Error ? err.message : "failed to open session");
   }
@@ -648,7 +649,10 @@ export function dispatchEvent(ev: WsServerEvent): void {
 
   if (ev.type === "snapshot") {
     const s = ev as SnapshotEnvelope;
-    const complete = s.events.length === 0 || (s.events[0]?.sequence ?? 0) === 1;
+    // Only treat the snapshot as a full replacement when the server explicitly
+    // says it is complete and provides a materialized state. Otherwise merge
+    // events into the existing view and preserve already-applied sequences.
+    const replacing = s.complete && s.state != null;
     const snapshotState = (s.state ?? {}) as Partial<SessionState>;
     ensureSession({
       sessionId: s.sessionId,
@@ -661,8 +665,8 @@ export function dispatchEvent(ev: WsServerEvent): void {
     });
     updateSession(s.sessionId, (d) => {
       d.processGeneration = s.processGeneration;
-      d.lastSequence = 0;
-      if (complete) {
+      if (replacing) {
+        d.lastSequence = 0;
         d.timeline = [];
         d.messages = {};
         d.toolCalls = {};
@@ -670,6 +674,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
         d.plan = null;
         d.usage = null;
         d.running = false;
+        d.permissions = [];
       }
       if (snapshotState.status) d.status = snapshotState.status as SessionState["status"];
       if (snapshotState.pendingPermissions) d.permissions = snapshotState.pendingPermissions as PendingPermission[];
@@ -700,16 +705,24 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
     updateSession(sessionId, (d) => {
       d.processGeneration = p.processGeneration;
       d.lastSequence = 0;
-      d.timeline = [];
-      d.messages = {};
-      d.toolCalls = {};
-      d.runs = {};
-      d.plan = null;
-      d.usage = null;
       d.running = false;
       d.permissions = [];
+      d.openAgentMsg = null;
+      d.openThoughtMsg = null;
+      d.openUserMsg = null;
+      d.status = "loading";
     });
-    setCursor(sessionId, p.processGeneration, 0);
+    // Drop terminal metadata and buffers belonging to the replaced generation.
+    const nextTerminals: Record<string, TerminalMeta> = {};
+    for (const [id, meta] of Object.entries(state.terminals)) {
+      if (meta.sessionId === sessionId && meta.processGeneration === p.previousGeneration) {
+        termBuffers.delete(id);
+      } else {
+        nextTerminals[id] = meta;
+      }
+    }
+    setState({ terminals: nextTerminals });
+    subscribeSession(sessionId, p.processGeneration, 0);
     return;
   }
   const session = state.sessions[sessionId];
@@ -821,9 +834,9 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
   if (sessionId && processGeneration) {
     const cur = getCursor(sessionId);
     if (cur && cur.processGeneration === processGeneration) {
-      setCursor(sessionId, processGeneration, Math.max(cur.after, ev.sequence));
+      updateCursor(sessionId, processGeneration, Math.max(cur.after, ev.sequence));
     } else {
-      setCursor(sessionId, processGeneration, ev.sequence);
+      updateCursor(sessionId, processGeneration, ev.sequence);
     }
     const current = state.sessions[sessionId];
     if (current && current.processGeneration === processGeneration && ev.sequence > current.lastSequence) {

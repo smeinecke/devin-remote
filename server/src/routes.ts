@@ -7,7 +7,7 @@ import type { WsSubscriber } from "./ws-subscriber.js";
 import type { UsageRecord } from "./types.js";
 import { saveUpload, serveUpload, uploadPath } from "./uploads.js";
 import { buildSessionZip } from "./export.js";
-import { isGitRepository, createWorktree, cleanupWorktree } from "./worktree.js";
+import { isGitRepository, createWorktree, cleanupWorktree, rollbackCreatedWorktree } from "./worktree.js";
 
 export interface ApiContext {
   store: Store;
@@ -139,7 +139,7 @@ export async function handleApi(
         });
       } catch (error) {
         if (worktreeInfo.isIsolated) {
-          await cleanupWorktree(worktreeInfo.worktree).catch((err) => console.error("rollback cleanup failed:", err));
+          await rollbackCreatedWorktree(worktreeInfo).catch((err) => console.error("rollback cleanup failed:", err));
         }
         throw error;
       }

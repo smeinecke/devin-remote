@@ -145,12 +145,21 @@ export class EventBus {
   snapshot(sessionId: string, processGeneration: number, state: unknown): SnapshotEnvelope {
     const buf = this.buffers.get(this.key(sessionId, processGeneration));
     const events = buf?.events ?? [];
+    const first = events[0]?.sequence ?? null;
+    const latest = buf?.latest() ?? 0;
+    // Snapshots are partial until the server materializes the full conversation
+    // state and includes it here. A partial snapshot carries controller metadata
+    // in `state` but the client must merge, not replace, its local view.
+    const complete = false;
     return {
       type: "snapshot",
       sessionId,
       processGeneration,
       timestamp: Date.now(),
-      state,
+      complete,
+      baseSequence: first,
+      latestSequence: latest,
+      state: state as SnapshotEnvelope["state"],
       events: events.map(toEnvelope),
     };
   }

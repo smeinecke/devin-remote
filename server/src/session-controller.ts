@@ -60,6 +60,7 @@ export class SessionController {
   private acp: AcpProcess | null = null;
   private loadingPromise: Promise<void> | null = null;
   private activeOperation?: string;
+  private activePrompt: Promise<acp.PromptResponse> | null = null;
   private pendingPermissions = new Map<string, PermissionRequest>();
   private metadata: SessionMetadata;
   private eventBus: EventBus;
@@ -231,7 +232,9 @@ export class SessionController {
       }
       this.pendingPermissions.clear();
       if (oldAcp && !oldAcp.exited) {
-        oldAcp.kill();
+        // Terminate the old process without blocking replacement; the
+        // generation guards ensure its callbacks cannot affect state.
+        oldAcp.terminate().catch((err) => console.error("failed to terminate old acp:", err));
       }
 
       const acp = await factory(this.cwd, gen, {
@@ -303,8 +306,9 @@ export class SessionController {
     this.activeOperation = `prompt-${Date.now()}`;
     this.emitStateChange(this.status, this.status);
 
+    this.activePrompt = this.acp.prompt(blocks);
     try {
-      const result = await this.acp.prompt(blocks);
+      const result = await this.activePrompt;
       if (this.status === "running" || this.status === "waiting_for_permission" || this.status === "cancelling") {
         this.transition("complete");
       }
@@ -320,6 +324,8 @@ export class SessionController {
       }
       this.activeOperation = undefined;
       throw err;
+    } finally {
+      this.activePrompt = null;
     }
   }
 
@@ -330,12 +336,22 @@ export class SessionController {
     this.activeOperation = `cancel-${Date.now()}`;
     this.emitStateChange(this.status, this.status);
 
+    const CANCEL_TIMEOUT_MS = 5000;
+
     try {
       await this.acp?.cancel();
-      // The final transition to idle happens when the prompt completes or the
-      // process exit handler fires. Do not eagerly mark idle here.
+
+      if (this.activePrompt) {
+        await Promise.race([
+          this.activePrompt.catch(() => {}),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("cancel timed out")), CANCEL_TIMEOUT_MS)),
+        ]);
+      }
     } catch {
-      // cancel is best-effort; idempotent on the client side.
+      // Cancel did not settle in time. Kill the ACP process and mark the
+      // session failed so the next operation triggers a reattach.
+      this.transition("fail");
+      this.acp?.kill();
     } finally {
       this.activeOperation = undefined;
     }

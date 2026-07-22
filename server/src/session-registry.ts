@@ -99,6 +99,9 @@ export class SessionRegistry {
       this.controllers.delete(placeholder);
       this.controllers.set(finalId, c);
       return { sessionId: finalId, processGeneration: c.processGeneration, cwd, modes: c.modes };
+    } catch (error) {
+      this.controllers.delete(placeholder);
+      throw error;
     } finally {
       this.starting.delete(placeholder);
     }

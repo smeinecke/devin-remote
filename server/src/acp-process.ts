@@ -264,6 +264,26 @@ export class AcpProcess {
       /* already dead */
     }
   }
+
+  /** Send SIGTERM, wait, then SIGKILL until the process exits. */
+  async terminate(timeoutMs = 5000): Promise<void> {
+    if (this.exited) return;
+    this.kill();
+    const deadline = Date.now() + timeoutMs;
+    while (!this.exited && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    if (!this.exited) {
+      try {
+        this.proc.kill("SIGKILL");
+      } catch {
+        /* already dead */
+      }
+      while (!this.exited) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+  }
 }
 
 function confine(root: string, p: string): string {

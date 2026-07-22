@@ -228,12 +228,30 @@ export interface ServerEventEnvelope {
   payload: unknown;
 }
 
+export interface MaterializedSessionState {
+  sessionId: string;
+  processGeneration: number;
+  status: SessionStatus;
+  cwd: string;
+  title?: string | null;
+  alias?: string | null;
+  branch?: string | null;
+  worktree?: string | null;
+  activeOperation?: string;
+  pendingPermissions: unknown[];
+  running: boolean;
+  latestSequence: number;
+}
+
 export interface SnapshotEnvelope {
   type: "snapshot";
   sessionId: string;
   processGeneration: number;
   timestamp: number;
-  state: unknown;
+  complete: boolean;
+  baseSequence: number | null;
+  latestSequence: number;
+  state: MaterializedSessionState | null;
   events: ServerEventEnvelope[];
 }
 
