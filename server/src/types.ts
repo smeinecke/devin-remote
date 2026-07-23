@@ -107,4 +107,33 @@ export interface GenerationChangedEnvelope {
   subscriptionEstablished?: boolean;
 }
 
+export type SubagentStatus =
+  | "starting"
+  | "running"
+  | "waiting_for_permission"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
+export interface SubagentDescriptor {
+  id: string;
+  sessionId: string;
+  processGeneration: number;
+  parentSubagentId: string | null;
+  parentToolCallId: string | null;
+  title: string | null;
+  prompt: string | null;
+  status: SubagentStatus;
+  startedAt: number | null;
+  completedAt: number | null;
+  result: string | null;
+  error: string | null;
+  profile: string | null;
+  depth: number;
+  isBackground: boolean;
+  toolCallIds: string[];
+  pendingPermissions: string[];
+}
+
 export type WsServerEvent = ServerEventEnvelope | SnapshotEnvelope | GenerationChangedEnvelope | { type: "config"; app: { name: string; version: string }; settings: StoreShape["settings"] };

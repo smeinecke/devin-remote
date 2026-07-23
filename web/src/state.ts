@@ -18,6 +18,7 @@ import type {
 import { mentionToUri, extractMentions, randomUUID } from "./utils";
 import { rebuildRuns } from "./runs";
 import type {
+  SubagentDescriptor,
   MetaResponse,
   PromptBlock,
   ServerEventEnvelope,
@@ -120,6 +121,7 @@ function emptySession(summary: SessionSummary): SessionState {
     timeline: [],
     messages: {},
     toolCalls: {},
+    subagents: {},
     runs: {},
     plan: null,
     usage: null,
@@ -324,12 +326,14 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
       }
       case "tool_call": {
         const u = update as ToolCallStartUpdate;
+        const raw = update as Record<string, unknown>;
         closeOpenMessages(d);
         d.running = true;
         const existing = d.toolCalls[u.toolCallId];
+        const subagentTitle = subagentTitleFromUpdate(raw);
         const tc: ToolCallState = {
           id: u.toolCallId,
-          title: u.title ?? existing?.title ?? "tool call",
+          title: subagentTitle ?? u.title ?? existing?.title ?? "tool call",
           kind: u.kind ?? existing?.kind ?? "other",
           status: u.status ?? "pending",
           content: [...(existing?.content ?? []), ...normalizeToolContent(u.content)],
@@ -338,6 +342,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
           rawOutput: existing?.rawOutput,
           startedAt: existing?.startedAt ?? Date.now(),
           finishedAt: existing?.finishedAt ?? null,
+          subagentId: subagentIdFromUpdate(raw) ?? existing?.subagentId ?? null,
         };
         d.toolCalls = { ...d.toolCalls, [tc.id]: tc };
         if (!existing) d.timeline = [...d.timeline, { kind: "tool", id: tc.id }];
@@ -346,17 +351,20 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
       }
       case "tool_call_update": {
         const u = update as ToolCallPatchUpdate;
+        const raw = update as Record<string, unknown>;
         const existing = d.toolCalls[u.toolCallId];
+        const subagentTitle = subagentTitleFromUpdate(raw);
         if (!existing) {
           const tc: ToolCallState = {
             id: u.toolCallId,
-            title: "tool call",
+            title: subagentTitle ?? "tool call",
             kind: "other",
             status: u.status ?? "in_progress",
             content: normalizeToolContent(u.content),
             rawOutput: u.rawOutput,
             startedAt: Date.now(),
             finishedAt: null,
+            subagentId: subagentIdFromUpdate(raw) ?? null,
           };
           d.toolCalls = { ...d.toolCalls, [tc.id]: tc };
           d.timeline = [...d.timeline, { kind: "tool", id: tc.id }];
@@ -365,6 +373,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
         }
         const merged: ToolCallState = {
           ...existing,
+          title: subagentTitle ?? existing.title,
           status: u.status ?? existing.status,
           content: u.content ? [...existing.content, ...u.content] : existing.content,
           rawOutput: u.rawOutput ?? existing.rawOutput,
@@ -372,6 +381,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
             (u.status === "completed" || u.status === "failed") && existing.finishedAt == null
               ? Date.now()
               : existing.finishedAt,
+          subagentId: subagentIdFromUpdate(raw) ?? existing.subagentId ?? null,
         };
         d.toolCalls = { ...d.toolCalls, [merged.id]: merged };
         if (u.content) registerTerminalsFromContent(sessionId, d.processGeneration, u.content);
@@ -447,6 +457,21 @@ function closeOpenMessages(d: SessionState, except?: "user" | "agent" | "thought
 
 function normalizeToolContent(items: ToolCallContent[] | undefined): ToolCallContent[] {
   return Array.isArray(items) ? items : [];
+}
+
+function getMeta(update: Record<string, unknown>, key: string): unknown {
+  const meta = update._meta as Record<string, unknown> | undefined;
+  return meta?.[key];
+}
+
+function subagentIdFromUpdate(update: Record<string, unknown>): string | undefined {
+  const ctx = getMeta(update, "cognition.ai/subagent_context") as { parentAgentId?: string } | undefined;
+  return ctx?.parentAgentId;
+}
+
+function subagentTitleFromUpdate(update: Record<string, unknown>): string | undefined {
+  const started = getMeta(update, "cognition.ai/subagent_started") as { title?: string } | undefined;
+  return started?.title;
 }
 
 function registerTerminalsFromContent(sessionId: string, processGeneration: number, content: ToolCallContent[]): void {
@@ -743,6 +768,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
         d.timeline = [];
         d.messages = {};
         d.toolCalls = {};
+        d.subagents = {};
         d.runs = {};
         d.plan = null;
         d.usage = null;
@@ -752,6 +778,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
       if (snapshotState.status) d.status = snapshotState.status as SessionState["status"];
       if (typeof snapshotState.running === "boolean") d.running = snapshotState.running;
       if (snapshotState.pendingPermissions) d.permissions = snapshotState.pendingPermissions as PendingPermission[];
+      if (snapshotState.subagents) d.subagents = snapshotState.subagents as Record<string, SubagentDescriptor>;
       d.synced = true;
     });
     for (const e of s.events) applyEventEnvelope(e as ServerEventEnvelope);
@@ -779,6 +806,7 @@ function handleGenerationChanged(sessionId: string, previousGeneration: number, 
     d.running = false;
     d.activePromptRequest = null;
     d.permissions = [];
+    d.subagents = {};
     d.openAgentMsg = null;
     d.openThoughtMsg = null;
     d.openUserMsg = null;
@@ -886,6 +914,29 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
           },
         });
       }
+      break;
+    }
+    case "subagent_update": {
+      const p = payload as SubagentDescriptor;
+      updateSession(sessionId, (d) => {
+        d.subagents = { ...d.subagents, [p.id]: p };
+        const nextToolCalls = { ...d.toolCalls };
+        if (nextToolCalls[p.id]) {
+          nextToolCalls[p.id] = {
+            ...nextToolCalls[p.id],
+            title: p.title ?? nextToolCalls[p.id].title,
+            kind: nextToolCalls[p.id].kind === "other" || !nextToolCalls[p.id].kind ? "subagent" : nextToolCalls[p.id].kind,
+            subagentId: p.id,
+          };
+        }
+        for (const tcId of p.toolCallIds) {
+          const tc = nextToolCalls[tcId];
+          if (tc && tc.subagentId !== p.id) {
+            nextToolCalls[tcId] = { ...tc, subagentId: p.id };
+          }
+        }
+        d.toolCalls = nextToolCalls;
+      });
       break;
     }
     case "agent_log": {

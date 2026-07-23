@@ -13,6 +13,35 @@ export type SessionStatus =
   | "failed"
   | "closed";
 
+export type SubagentStatus =
+  | "starting"
+  | "running"
+  | "waiting_for_permission"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
+export interface SubagentDescriptor {
+  id: string;
+  sessionId: string;
+  processGeneration: number;
+  parentSubagentId: string | null;
+  parentToolCallId: string | null;
+  title: string | null;
+  prompt: string | null;
+  status: SubagentStatus;
+  startedAt: number | null;
+  completedAt: number | null;
+  result: string | null;
+  error: string | null;
+  profile: string | null;
+  depth: number;
+  isBackground: boolean;
+  toolCallIds: string[];
+  pendingPermissions: string[];
+}
+
 export interface Settings {
   theme: ThemeName;
   soundComplete: boolean;
@@ -141,6 +170,8 @@ export interface ToolCallStartUpdate {
   content?: ToolCallContent[];
   locations?: ToolCallLocation[];
   rawInput?: unknown;
+  /** Vendor-specific extension metadata, e.g. Cognition subagent context. */
+  _meta?: Record<string, unknown>;
 }
 
 export interface ToolCallPatchUpdate {
@@ -149,6 +180,8 @@ export interface ToolCallPatchUpdate {
   status?: ToolCallStatus;
   content?: ToolCallContent[];
   rawOutput?: unknown;
+  /** Vendor-specific extension metadata, e.g. Cognition subagent annotations. */
+  _meta?: Record<string, unknown>;
 }
 
 export interface PlanUpdate {

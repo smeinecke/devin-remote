@@ -7,12 +7,13 @@ import type {
   SessionUpdate,
   Settings,
   SlashCommand,
+  SubagentDescriptor,
   ToolCallContent,
   ToolCallLocation,
   ToolCallStatus,
 } from "./types";
 
-export type { Settings, ToolCallContent };
+export type { Settings, ToolCallContent, SubagentDescriptor };
 
 export interface Attachment {
   id: string;
@@ -41,6 +42,8 @@ export interface ToolCallState {
   rawOutput?: unknown;
   startedAt: number;
   finishedAt: number | null;
+  /** If this tool was executed by a subagent, the subagent's id. */
+  subagentId?: string | null;
 }
 
 export interface AgentRun {
@@ -80,6 +83,10 @@ export interface AgentActivity {
   autoExpand?: boolean;
   /** Optional terminal/diff/file metadata for the inspector. */
   meta?: { path?: string; terminalId?: string; command?: string };
+  /** If this activity is a subagent, nested child activities. */
+  children?: AgentActivity[];
+  /** If this activity represents a subagent, the subagent id. */
+  subagentId?: string;
 }
 
 export type TimelineItem = { kind: "message" | "tool" | "run"; id: string };
@@ -111,6 +118,7 @@ export interface SessionState {
   timeline: TimelineItem[];
   messages: Record<string, ChatMessage>;
   toolCalls: Record<string, ToolCallState>;
+  subagents: Record<string, SubagentDescriptor>;
   runs: Record<string, AgentRun>;
   plan: PlanEntry[] | null;
   usage: { used: number; size: number } | null;

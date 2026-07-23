@@ -1,0 +1,498 @@
+{"seq":1,"ts":1784805978792,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":2,"ts":1784805978793,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Connecting to MCP server 'devin/fetch'","level":"info","sessionId":""}}}
+{"seq":3,"ts":1784805978793,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Starting stdio MCP server 'devin/fetch': \"docker\" [\"run\", \"-i\", \"--rm\", \"mcp/fetch\"]","level":"info","sessionId":""}}}
+{"seq":4,"ts":1784805978794,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":5,"ts":1784805978794,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Connecting to MCP server 'devin/mcp-playwright'","level":"info","sessionId":""}}}
+{"seq":6,"ts":1784805978795,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Starting stdio MCP server 'devin/mcp-playwright': \"npx\" [\"-y\", \"@playwright/mcp@latest\"]","level":"info","sessionId":""}}}
+{"seq":7,"ts":1784805978795,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":8,"ts":1784805978795,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Connecting to MCP server 'devin/git'","level":"info","sessionId":""}}}
+{"seq":9,"ts":1784805978796,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Starting stdio MCP server 'devin/git': \"docker\" [\"run\", \"-i\", \"--rm\", \"mcp/git\"]","level":"info","sessionId":""}}}
+{"seq":10,"ts":1784805978797,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":11,"ts":1784805978797,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Connecting to MCP server 'playwright'","level":"info","sessionId":""}}}
+{"seq":12,"ts":1784805978797,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"Starting stdio MCP server 'playwright': \"npx\" [\"@playwright/mcp@latest\"]","level":"info","sessionId":""}}}
+{"seq":13,"ts":1784805979763,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":14,"ts":1784805979763,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"MCP server 'devin/git' connected successfully","level":"info","sessionId":""}}}
+{"seq":15,"ts":1784805980113,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":16,"ts":1784805980113,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"MCP server 'devin/fetch' connected successfully","level":"info","sessionId":""}}}
+{"seq":17,"ts":1784805980341,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":18,"ts":1784805980342,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"MCP server 'playwright' connected successfully","level":"info","sessionId":""}}}
+{"seq":19,"ts":1784805980417,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/mcp/serversChanged","params":{}}}
+{"seq":20,"ts":1784805980417,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/output","params":{"channel":"MCP","message":"MCP server 'devin/mcp-playwright' connected successfully","level":"info","sessionId":""}}}
+{"seq":21,"ts":1784805980467,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"title":"Use two explore subagents working in parallel. Subagent 1: list all .ts files...","sessionUpdate":"session_info_update"}}}
+{"seq":22,"ts":1784805983269,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"We","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":23,"ts":1784805983319,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" need","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":24,"ts":1784805983320,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" launch","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":25,"ts":1784805983320,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" two","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":26,"ts":1784805983335,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":27,"ts":1784805983361,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":28,"ts":1784805983386,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_expl","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":29,"ts":1784805983412,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"ore","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":30,"ts":1784805983415,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":31,"ts":1784805983416,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" parallel","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":32,"ts":1784805983416,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":33,"ts":1784805983439,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Task","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":34,"ts":1784805983473,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" ","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":35,"ts":1784805983473,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"1","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":36,"ts":1784805983473,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":":","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":37,"ts":1784805983474,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" list","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":38,"ts":1784805983496,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" all","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":39,"ts":1784805983497,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" .","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":40,"ts":1784805983497,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"ts","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":41,"ts":1784805983497,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" files","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":42,"ts":1784805983516,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":43,"ts":1784805983517,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" workspace","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":44,"ts":1784805983517,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":45,"ts":1784805983517,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" count","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":46,"ts":1784805983543,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" them","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":47,"ts":1784805983544,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":48,"ts":1784805983547,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Task","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":49,"ts":1784805983547,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" ","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":50,"ts":1784805983574,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"2","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":51,"ts":1784805983574,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":":","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":52,"ts":1784805983574,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":53,"ts":1784805983604,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" README","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":54,"ts":1784805983604,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".md","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":55,"ts":1784805983604,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":56,"ts":1784805983604,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" summarize","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":57,"ts":1784805983633,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" one","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":58,"ts":1784805983669,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sentence","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":59,"ts":1784805983669,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":60,"ts":1784805983669,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Then","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":61,"ts":1784805983677,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" wait","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":62,"ts":1784805983704,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":63,"ts":1784805983704,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":64,"ts":1784805983705,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":65,"ts":1784805983731,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" report","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":66,"ts":1784805983731,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":67,"ts":1784805983756,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" We","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":68,"ts":1784805983794,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" can","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":69,"ts":1784805983816,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" use","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":70,"ts":1784805983816,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" run","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":71,"ts":1784805983836,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":72,"ts":1784805983860,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":73,"ts":1784805983860,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" with","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":74,"ts":1784805983896,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" is","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":75,"ts":1784805983921,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_background","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":76,"ts":1784805983921,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" true","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":77,"ts":1784805983954,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":78,"ts":1784805983954,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":79,"ts":1784805983955,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":80,"ts":1784805983972,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" We","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":81,"ts":1784805983997,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" need","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":82,"ts":1784805984039,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" wait","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":83,"ts":1784805984067,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":84,"ts":1784805984068,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Can","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":85,"ts":1784805984089,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" launch","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":86,"ts":1784805984115,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" two","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":87,"ts":1784805984115,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" background","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":88,"ts":1784805984149,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" then","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":89,"ts":1784805984169,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":90,"ts":1784805984205,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":91,"ts":1784805984246,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":92,"ts":1784805984246,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" block","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":93,"ts":1784805984271,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":94,"ts":1784805984272,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" However","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":95,"ts":1784805984313,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" instructions","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":96,"ts":1784805984313,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":":","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":97,"ts":1784805984323,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" If","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":98,"ts":1784805984350,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" running","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":99,"ts":1784805984350,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" background","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":100,"ts":1784805984375,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":101,"ts":1784805984403,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agents","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":102,"ts":1784805984404,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":103,"ts":1784805984404,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" foreground","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":104,"ts":1784805984442,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":105,"ts":1784805984443,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" run","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":106,"ts":1784805984500,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" background","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":107,"ts":1784805984500,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" first","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":108,"ts":1784805984502,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" then","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":109,"ts":1784805984529,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" foreground","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":110,"ts":1784805984530,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":111,"ts":1784805984531,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" But","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":112,"ts":1784805984531,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" we","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":113,"ts":1784805984642,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" can","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":114,"ts":1784805984643,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" run","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":115,"ts":1784805984657,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":116,"ts":1784805984658,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" background","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":117,"ts":1784805984673,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":118,"ts":1784805984701,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" parallel","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":119,"ts":1784805984702,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":120,"ts":1784805984702,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" then","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":121,"ts":1784805984726,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" check","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":122,"ts":1784805984727,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":123,"ts":1784805984727,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":124,"ts":1784805984727,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":125,"ts":1784805984754,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":126,"ts":1784805984754,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" each","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":127,"ts":1784805984779,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":128,"ts":1784805984780,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Since","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":129,"ts":1784805984780,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" we","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":130,"ts":1784805984806,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" need","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":131,"ts":1784805984806,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" wait","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":132,"ts":1784805984806,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":133,"ts":1784805984830,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":134,"ts":1784805984831,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":135,"ts":1784805984864,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Could","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":136,"ts":1784805984884,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" also","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":137,"ts":1784805984916,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" run","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":138,"ts":1784805984917,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" foreground","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":139,"ts":1784805984917,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":140,"ts":1784805984947,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" But","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":141,"ts":1784805984948,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" two","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":142,"ts":1784805984979,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" foreground","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":143,"ts":1784805985007,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" cannot","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":144,"ts":1784805985035,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" run","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":145,"ts":1784805985066,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":146,"ts":1784805985097,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" parallel","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":147,"ts":1784805985097,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":148,"ts":1784805985098,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" So","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":149,"ts":1784805985098,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" background","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":150,"ts":1784805985129,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":151,"ts":1784805985159,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Launch","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":152,"ts":1784805985159,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":153,"ts":1784805985160,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" is","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":154,"ts":1784805985187,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_background","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":155,"ts":1784805985217,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" true","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":156,"ts":1784805985217,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":157,"ts":1784805985218,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Need","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":158,"ts":1784805985246,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" provide","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":159,"ts":1784805985279,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" clear","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":160,"ts":1784805985307,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" prompt","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":161,"ts":1784805985339,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":162,"ts":1784805985339,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" After","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":163,"ts":1784805985380,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" launching","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":164,"ts":1784805985411,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":165,"ts":1784805985412,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" call","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":166,"ts":1784805985450,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":167,"ts":1784805985476,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":168,"ts":1784805985477,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":169,"ts":1784805985477,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":170,"ts":1784805985477,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" each","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":171,"ts":1784805985507,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" with","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":172,"ts":1784805985507,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" block","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":173,"ts":1784805985544,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" true","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":174,"ts":1784805985551,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":175,"ts":1784805985551,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":176,"ts":1784805985582,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":177,"ts":1784805985583,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" profiles","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":178,"ts":1784805985611,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":":","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":179,"ts":1784805985611,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":180,"ts":1784805985642,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":181,"ts":1784805985642,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_expl","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":182,"ts":1784805985672,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"ore","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":183,"ts":1784805985673,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":184,"ts":1784805985701,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-only","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":185,"ts":1784805985702,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":186,"ts":1784805985702,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Good","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":187,"ts":1784805985738,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":188,"ts":1784805985764,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Workspace","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":189,"ts":1784805985798,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" /","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":190,"ts":1784805985830,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"home","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":191,"ts":1784805985831,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"/c","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":192,"ts":1784805985831,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"al","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":193,"ts":1784805985831,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"vin","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":194,"ts":1784805985855,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"/dev","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":195,"ts":1784805985855,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":196,"ts":1784805985855,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-remote","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":197,"ts":1784805985887,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":198,"ts":1784805985888,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Need","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":199,"ts":1784805985918,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" output","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":200,"ts":1784805985945,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":201,"ts":1784805985945,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" user","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":202,"ts":1784805985977,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":203,"ts":1784805985977,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Use","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":204,"ts":1784805986006,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" todo","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":205,"ts":1784805986037,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":206,"ts":1784805986066,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Not","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":207,"ts":1784805986067,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" necessary","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":208,"ts":1784805986099,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" but","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":209,"ts":1784805986100,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" okay","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":210,"ts":1784805986131,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":211,"ts":1784805987816,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/thinking_complete","params":{"durationMs":4547,"blockIndex":0,"sessionId":"even-level"}}}
+{"seq":212,"ts":1784805987819,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"used":11006,"size":262000,"_meta":{"cognition.ai/inputTokens":"[REDACTED]","cognition.ai/outputTokens":"[REDACTED]","cognition.ai/cachedReadTokens":"[REDACTED]"},"sessionUpdate":"usage_update"}}}
+{"seq":213,"ts":1784805987820,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.run_subagent:0","title":"Ran explore subagent List and count .ts files","rawInput":{"title":"List and count .ts files","task":"In the workspace /home/calvin/devin-remote, list all .ts files (recursively) and report the total count. Return only the count and optionally a concise note.","profile":"subagent_explore","is_background":true},"_meta":{"cognition.ai/inferenceToolName":"run_subagent"},"sessionUpdate":"tool_call"}}}
+{"seq":214,"ts":1784805987820,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.run_subagent:1","title":"Ran explore subagent Summarize README.md","rawInput":{"title":"Summarize README.md","task":"Read /home/calvin/devin-remote/README.md and summarize its contents in exactly one sentence. If the file does not exist, say so.","profile":"subagent_explore","is_background":true},"_meta":{"cognition.ai/inferenceToolName":"run_subagent"},"sessionUpdate":"tool_call"}}}
+{"seq":215,"ts":1784805987821,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.run_subagent:0","status":"in_progress","_meta":{"cognition.ai/inferenceToolName":"run_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":216,"ts":1784805987822,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.run_subagent:0","status":"completed","content":[{"content":{"text":"Background subagent started.","type":"text"},"type":"content"}],"_meta":{"cognition.ai/inferenceToolName":"run_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":217,"ts":1784805987822,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.run_subagent:1","status":"in_progress","_meta":{"cognition.ai/inferenceToolName":"run_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":218,"ts":1784805987824,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"98badb44","status":"in_progress","_meta":{"cognition.ai/subagent_started":{"agentId":"98badb44","title":"List and count .ts files","task":"In the workspace /home/calvin/devin-remote, list all .ts files (recursively) and report the total count. Return only the count and optionally a concise note.","profile":"Explore","depth":1,"isBackground":true}},"sessionUpdate":"tool_call_update"}}}
+{"seq":219,"ts":1784805987825,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.run_subagent:1","status":"completed","content":[{"content":{"text":"Background subagent started.","type":"text"},"type":"content"}],"_meta":{"cognition.ai/inferenceToolName":"run_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":220,"ts":1784805987825,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"76d47306","status":"in_progress","_meta":{"cognition.ai/subagent_started":{"agentId":"76d47306","title":"Summarize README.md","task":"Read /home/calvin/devin-remote/README.md and summarize its contents in exactly one sentence. If the file does not exist, say so.","profile":"Explore","depth":1,"isBackground":true}},"sessionUpdate":"tool_call_update"}}}
+{"seq":221,"ts":1784805988785,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"call_6f97e11b8c5e48c3a92184e5","title":"Read file","kind":"read","locations":[{"path":"/home/calvin/devin-remote/README.md"}],"_meta":{"cognition.ai/inferenceToolName":"read","cognition.ai/subagent_context":{"parentAgentId":"76d47306"}},"sessionUpdate":"tool_call"}}}
+{"seq":222,"ts":1784805988890,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"call_8f4c39a0d3fa4fbabdcf7dc7","title":"Find files matching `**/*.ts`","kind":"search","locations":[{"path":"/home/calvin/devin-remote"}],"rawInput":{"query":"**/*.ts","path":"/home/calvin/devin-remote"},"_meta":{"cognition.ai/inferenceToolName":"find_file_by_name","cognition.ai/subagent_context":{"parentAgentId":"98badb44"}},"sessionUpdate":"tool_call"}}}
+{"seq":223,"ts":1784805988970,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"title":"Parallel Subagents: TS Count and README Summary","sessionUpdate":"session_info_update"}}}
+{"seq":224,"ts":1784805990334,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"Need","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":225,"ts":1784805990357,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" wait","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":226,"ts":1784805990389,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":227,"ts":1784805990389,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":228,"ts":1784805990410,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":229,"ts":1784805990410,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Use","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":230,"ts":1784805990437,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":231,"ts":1784805990437,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":232,"ts":1784805990437,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":233,"ts":1784805990438,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" block","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":234,"ts":1784805990465,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" true","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":235,"ts":1784805990492,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":236,"ts":1784805990492,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Could","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":237,"ts":1784805990521,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" call","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":238,"ts":1784805990521,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":239,"ts":1784805990549,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" parallel","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":240,"ts":1784805990550,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":241,"ts":1784805990571,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" The","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":242,"ts":1784805990571,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" two","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":243,"ts":1784805990572,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":244,"ts":1784805990599,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":245,"ts":1784805990599,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":246,"ts":1784805990599,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" calls","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":247,"ts":1784805990621,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"76d47306","status":"completed","_meta":{"cognition.ai/subagent_completed":{"agentId":"76d47306","success":true,"summary":"Devin Remote is a browser console for the Devin CLI that allows you to drive local Devin sessions from any browser, serving sessions, streaming chat, tool calls, permissions, modes, models, usage stats, and terminals locally over the Agent Client Protocol (ACP).","depth":1}},"sessionUpdate":"tool_call_update"}}}
+{"seq":248,"ts":1784805990624,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" are","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":249,"ts":1784805990625,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" independent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":250,"ts":1784805990625,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" but","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":251,"ts":1784805990652,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" each","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":252,"ts":1784805990653,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" blocks","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":253,"ts":1784805990680,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":254,"ts":1784805990712,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Parallel","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":255,"ts":1784805990734,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" not","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":256,"ts":1784805990763,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" necessary","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":257,"ts":1784805990789,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" but","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":258,"ts":1784805990789,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" we","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":259,"ts":1784805990789,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" can","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":260,"ts":1784805990789,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" call","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":261,"ts":1784805990814,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":262,"ts":1784805990815,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" concurrently","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":263,"ts":1784805990815,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":264,"ts":1784805990844,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" then","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":265,"ts":1784805990869,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" combine","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":266,"ts":1784805990869,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":267,"ts":1784805990896,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" If","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":268,"ts":1784805990922,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":269,"ts":1784805990951,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" block","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":270,"ts":1784805990982,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":271,"ts":1784805990982,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" calling","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":272,"ts":1784805991003,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" one","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":273,"ts":1784805991004,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" then","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":274,"ts":1784805991036,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" other","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":275,"ts":1784805991066,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" would","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":276,"ts":1784805991067,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" block","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":277,"ts":1784805991067,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sequentially","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":278,"ts":1784805991108,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":279,"ts":1784805991112,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" But","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":280,"ts":1784805991113,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" to","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":281,"ts":1784805991113,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" finish","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":282,"ts":1784805991147,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":283,"ts":1784805991159,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" can","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":284,"ts":1784805991189,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" call","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":285,"ts":1784805991218,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":286,"ts":1784805991218,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":287,"ts":1784805991218,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" same","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":288,"ts":1784805991250,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" response","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":289,"ts":1784805991281,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":290,"ts":1784805991282,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Are","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":291,"ts":1784805991317,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" parallel","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":292,"ts":1784805991343,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" tool","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":293,"ts":1784805991371,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" calls","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":294,"ts":1784805991372,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" allowed","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":295,"ts":1784805991407,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":296,"ts":1784805991436,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" read","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":297,"ts":1784805991462,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"_sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":298,"ts":1784805991463,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":299,"ts":1784805991494,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":300,"ts":1784805991494,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Should","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":301,"ts":1784805991527,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" be","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":302,"ts":1784805991562,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" okay","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":303,"ts":1784805991587,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":304,"ts":1784805991615,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" However","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":305,"ts":1784805991616,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" maybe","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":306,"ts":1784805991616,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" block","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":307,"ts":1784805991646,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" true","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":308,"ts":1784805991681,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":309,"ts":1784805991681,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" timeout","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":310,"ts":1784805991707,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" default","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":311,"ts":1784805991737,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" ","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":312,"ts":1784805991772,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"30","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":313,"ts":1784805991773,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":314,"ts":1784805991773,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Let's","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":315,"ts":1784805991773,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" do","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":316,"ts":1784805991802,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" both","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":317,"ts":1784805991802,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":318,"ts":1784805992402,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/thinking_complete","params":{"durationMs":2067,"blockIndex":1,"sessionId":"even-level"}}}
+{"seq":319,"ts":1784805992403,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"used":11287,"size":262000,"_meta":{"cognition.ai/inputTokens":"[REDACTED]","cognition.ai/outputTokens":"[REDACTED]","cognition.ai/cachedReadTokens":"[REDACTED]"},"sessionUpdate":"usage_update"}}}
+{"seq":320,"ts":1784805992405,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.read_subagent:2","title":"Checked on subagent List and count .ts files","rawInput":{"agent_id":"98badb44","block":true,"timeout":60},"_meta":{"cognition.ai/inferenceToolName":"read_subagent"},"sessionUpdate":"tool_call"}}}
+{"seq":321,"ts":1784805992405,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.read_subagent:3","title":"Checked on subagent Summarize README.md","rawInput":{"agent_id":"76d47306","block":true,"timeout":60},"_meta":{"cognition.ai/inferenceToolName":"read_subagent"},"sessionUpdate":"tool_call"}}}
+{"seq":322,"ts":1784805992405,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.read_subagent:2","status":"in_progress","_meta":{"cognition.ai/inferenceToolName":"read_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":323,"ts":1784805992406,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.read_subagent:3","status":"in_progress","_meta":{"cognition.ai/inferenceToolName":"read_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":324,"ts":1784805992406,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.read_subagent:3","status":"completed","content":[{"content":{"text":"Subagent completed:\nDevin Remote is a browser console for the Devin CLI that allows you to drive local Devin sessions from any browser, serving sessions, streaming chat, tool calls, permissions, modes, models, usage stats, and terminals locally over the Agent Client Protocol (ACP).","type":"text"},"type":"content"}],"_meta":{"cognition.ai/inferenceToolName":"read_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":325,"ts":1784805995197,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"98badb44","status":"completed","_meta":{"cognition.ai/subagent_completed":{"agentId":"98badb44","success":true,"summary":"68 .ts files found (32 in main workspace, 36 in .devin-remote/worktrees subdirectory).","depth":1}},"sessionUpdate":"tool_call_update"}}}
+{"seq":326,"ts":1784805995415,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"toolCallId":"functions.read_subagent:2","status":"completed","content":[{"content":{"text":"Subagent completed:\n68 .ts files found (32 in main workspace, 36 in .devin-remote/worktrees subdirectory).","type":"text"},"type":"content"}],"_meta":{"cognition.ai/inferenceToolName":"read_subagent"},"sessionUpdate":"tool_call_update"}}}
+{"seq":327,"ts":1784805996406,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"Now","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":328,"ts":1784805996430,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" report","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":329,"ts":1784805996472,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" final","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":330,"ts":1784805996481,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" to","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":331,"ts":1784805996508,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" user","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":332,"ts":1784805996531,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":":","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":333,"ts":1784805996558,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" file","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":334,"ts":1784805996558,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" count","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":335,"ts":1784805996590,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":336,"ts":1784805996590,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" summary","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":337,"ts":1784805996591,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":338,"ts":1784805996611,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" The","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":339,"ts":1784805996611,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sub","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":340,"ts":1784805996634,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"agent","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":341,"ts":1784805996634,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" .","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":342,"ts":1784805996634,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"ts","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":343,"ts":1784805996675,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" count","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":344,"ts":1784805996690,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" includes","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":345,"ts":1784805996690,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" .","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":346,"ts":1784805996691,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"dev","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":347,"ts":1784805996691,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":348,"ts":1784805996715,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-remote","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":349,"ts":1784805996715,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"/work","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":350,"ts":1784805996746,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"trees","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":351,"ts":1784805996747,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" subdirectory","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":352,"ts":1784805996747,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"?","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":353,"ts":1784805996747,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" That","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":354,"ts":1784805996777,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" might","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":355,"ts":1784805996777,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" be","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":356,"ts":1784805996777,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" a","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":357,"ts":1784805996778,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" hidden","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":358,"ts":1784805996800,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" subdirectory","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":359,"ts":1784805996801,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":360,"ts":1784805996801,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" but","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":361,"ts":1784805996801,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" user","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":362,"ts":1784805996821,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" said","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":363,"ts":1784805996858,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" workspace","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":364,"ts":1784805996858,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":365,"ts":1784805996858,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" It","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":366,"ts":1784805996875,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" says","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":367,"ts":1784805996906,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" found","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":368,"ts":1784805996930,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" ","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":369,"ts":1784805996931,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"68","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":370,"ts":1784805996932,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" .","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":371,"ts":1784805996932,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"ts","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":372,"ts":1784805996952,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" files","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":373,"ts":1784805996953,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" (","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":374,"ts":1784805996953,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"32","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":375,"ts":1784805996979,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" main","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":376,"ts":1784805997002,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":377,"ts":1784805997030,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" ","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":378,"ts":1784805997030,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"36","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":379,"ts":1784805997030,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":380,"ts":1784805997030,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" .","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":381,"ts":1784805997055,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"dev","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":382,"ts":1784805997055,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":383,"ts":1784805997055,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-remote","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":384,"ts":1784805997077,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"/work","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":385,"ts":1784805997078,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"trees","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":386,"ts":1784805997078,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":").","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":387,"ts":1784805997078,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" We","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":388,"ts":1784805997100,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" should","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":389,"ts":1784805997100,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" report","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":390,"ts":1784805997123,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":391,"ts":1784805997149,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Also","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":392,"ts":1784805997164,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" maybe","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":393,"ts":1784805997184,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" note","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":394,"ts":1784805997207,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" .","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":395,"ts":1784805997227,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"dev","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":396,"ts":1784805997227,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":397,"ts":1784805997248,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-remote","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":398,"ts":1784805997248,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"/work","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":399,"ts":1784805997248,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"trees","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":400,"ts":1784805997248,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" is","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":401,"ts":1784805997268,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" within","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":402,"ts":1784805997289,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" workspace","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":403,"ts":1784805997311,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":404,"ts":1784805997333,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Include","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":405,"ts":1784805997333,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" summary","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":406,"ts":1784805997351,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sentence","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":407,"ts":1784805997372,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_thought_chunk"}}}
+{"seq":408,"ts":1784805997372,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"Done","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":409,"ts":1784805997372,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/thinking_complete","params":{"durationMs":966,"blockIndex":2,"sessionId":"even-level"}}}
+{"seq":410,"ts":1784805997394,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".\n\n","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":411,"ts":1784805997417,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":412,"ts":1784805997436,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" **","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":413,"ts":1784805997436,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":414,"ts":1784805997456,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"ts","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":415,"ts":1784805997456,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" file","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":416,"ts":1784805997480,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" count","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":417,"ts":1784805997480,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"**:","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":418,"ts":1784805997480,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":419,"ts":1784805997480,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"68","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":420,"ts":1784805997499,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" (","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":421,"ts":1784805997499,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"32","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":422,"ts":1784805997519,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":423,"ts":1784805997520,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" the","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":424,"ts":1784805997520,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" main","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":425,"ts":1784805997542,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" workspace","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":426,"ts":1784805997542,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":427,"ts":1784805997542,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" ","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":428,"ts":1784805997542,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"36","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":429,"ts":1784805997559,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" in","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":430,"ts":1784805997560,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" `.","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":431,"ts":1784805997589,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"dev","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":432,"ts":1784805997589,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":433,"ts":1784805997589,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-remote","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":434,"ts":1784805997605,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"/work","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":435,"ts":1784805997606,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"trees","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":436,"ts":1784805997606,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"`)\n","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":437,"ts":1784805997606,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"-","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":438,"ts":1784805997621,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" **","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":439,"ts":1784805997621,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"README","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":440,"ts":1784805997645,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":".md","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":441,"ts":1784805997675,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" summary","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":442,"ts":1784805997676,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"**:","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":443,"ts":1784805997676,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Dev","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":444,"ts":1784805997701,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":445,"ts":1784805997702,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Remote","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":446,"ts":1784805997702,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" is","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":447,"ts":1784805997702,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" a","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":448,"ts":1784805997725,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" browser","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":449,"ts":1784805997725,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" console","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":450,"ts":1784805997725,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" for","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":451,"ts":1784805997725,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" the","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":452,"ts":1784805997750,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Dev","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":453,"ts":1784805997751,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":454,"ts":1784805997751,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" CLI","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":455,"ts":1784805997751,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" that","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":456,"ts":1784805997782,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" allows","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":457,"ts":1784805997782,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" you","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":458,"ts":1784805997782,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" to","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":459,"ts":1784805997783,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" drive","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":460,"ts":1784805997802,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" local","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":461,"ts":1784805997802,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Dev","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":462,"ts":1784805997827,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"in","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":463,"ts":1784805997828,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sessions","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":464,"ts":1784805997828,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" from","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":465,"ts":1784805997828,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" any","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":466,"ts":1784805997853,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" browser","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":467,"ts":1784805997853,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":468,"ts":1784805997853,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" serving","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":469,"ts":1784805997853,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" sessions","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":470,"ts":1784805997880,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":471,"ts":1784805997880,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" streaming","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":472,"ts":1784805997880,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" chat","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":473,"ts":1784805997880,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":474,"ts":1784805997904,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" tool","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":475,"ts":1784805997904,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" calls","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":476,"ts":1784805997905,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":477,"ts":1784805997905,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" permissions","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":478,"ts":1784805997934,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":479,"ts":1784805997934,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" modes","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":480,"ts":1784805997958,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":481,"ts":1784805997958,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" models","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":482,"ts":1784805997983,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":483,"ts":1784805997983,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" usage","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":484,"ts":1784805997983,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" stats","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":485,"ts":1784805997983,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":",","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":486,"ts":1784805998008,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" and","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":487,"ts":1784805998009,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" terminals","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":488,"ts":1784805998009,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" locally","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":489,"ts":1784805998009,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" over","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":490,"ts":1784805998034,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" the","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":491,"ts":1784805998034,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Agent","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":492,"ts":1784805998034,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Client","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":493,"ts":1784805998034,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" Protocol","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":494,"ts":1784805998060,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":" (","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":495,"ts":1784805998060,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":"ACP","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":496,"ts":1784805998060,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"content":{"text":").","type":"text"},"sessionUpdate":"agent_message_chunk"}}}
+{"seq":497,"ts":1784805998069,"sessionId":"new-mrxfeb0x","kind":"session_update","payload":{"update":{"used":11720,"size":262000,"_meta":{"cognition.ai/inputTokens":"[REDACTED]","cognition.ai/outputTokens":"[REDACTED]","cognition.ai/cachedReadTokens":"[REDACTED]"},"sessionUpdate":"usage_update"}}}
+{"seq":498,"ts":1784805998071,"sessionId":"new-mrxfeb0x","kind":"ext_notification","payload":{"method":"_cognition.ai/agent_stopped","params":{"cause":"complete","stats":{"toolCalls":6,"filesChanged":0,"commandsRun":0,"inputTokens":"[REDACTED]","outputTokens":"[REDACTED]","ttftMs":984,"tokensPerSec":"[REDACTED]","totalTimeMs":2646,"requestId":"626f4eb9-809b-474f-8d62-aeb1c857d5b6","modelLabel":"SWE-1.7 Max"},"sessionId":"even-level"}}}

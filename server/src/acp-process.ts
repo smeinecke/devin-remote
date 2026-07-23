@@ -91,7 +91,8 @@ export class AcpProcess {
       sessionUpdate: (params) => {
         if (params.sessionId !== self.sessionId) return;
         const wrapper = params as unknown as { update?: acp.SessionNotification };
-        cbs.onSessionUpdate(wrapper.update ?? (params as acp.SessionNotification));
+        const update = wrapper.update ?? (params as acp.SessionNotification);
+        cbs.onSessionUpdate(update);
       },
 
       requestPermission: (params) => {

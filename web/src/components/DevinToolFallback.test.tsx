@@ -19,6 +19,7 @@ function makeSession(cwd: string, worktree: string | null = null): SessionState 
     timeline: [],
     messages: {},
     toolCalls: {},
+    subagents: {},
     runs: {},
     plan: null,
     usage: null,

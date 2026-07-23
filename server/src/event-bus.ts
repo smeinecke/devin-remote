@@ -19,6 +19,7 @@ export type EventType =
   | "agent_log"
   | "process_status"
   | "prompt_done"
+  | "subagent_update"
   | "generation_changed"
   | "session_dropped";
 

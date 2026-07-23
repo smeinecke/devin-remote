@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { setUi, useStore } from "../state";
+import type { AgentActivity } from "../store-types";
 import {
   ActivityIcon,
   FileCodeIcon,
@@ -26,6 +27,58 @@ const TABS: { key: TabKey; label: string; icon: typeof ActivityIcon }[] = [
   { key: "plan", label: "Plan", icon: LayoutListIcon },
 ];
 
+function statusDot(status: AgentActivity["status"]) {
+  return cn(
+    "size-2 rounded-full",
+    status === "completed" && "bg-emerald-500",
+    status === "failed" && "bg-red-500",
+    status === "cancelled" && "bg-amber-500",
+    status === "in_progress" && "bg-primary animate-pulse",
+    status === "pending" && "bg-muted-foreground/50",
+  );
+}
+
+function ActivityItem({ activity, depth = 0 }: { activity: AgentActivity; depth?: number }) {
+  const hasChildren = activity.children && activity.children.length > 0;
+  const details = activity.details as { subagent?: { result?: string | null; prompt?: string | null } } | undefined;
+  return (
+    <div
+      key={activity.id}
+      className={cn(
+        "rounded-md border border-border bg-muted/40 p-2.5 text-xs",
+        activity.status === "in_progress" && "border-primary/30 bg-primary/5",
+        depth > 0 && "ml-4",
+      )}
+    >
+      <div className="flex items-center gap-2 font-medium">
+        <span className={statusDot(activity.status)} />
+        <span className="capitalize">{activity.type.replace(/_/g, " ")}</span>
+        {activity.subagentId && <span className="tnum font-mono text-[10px] text-muted-foreground">{activity.subagentId.slice(0, 8)}</span>}
+        <span className="ml-auto text-muted-foreground">{activity.title}</span>
+      </div>
+      {details?.subagent?.prompt && (
+        <div className="mt-1 truncate text-muted-foreground" title={details.subagent.prompt}>
+          {details.subagent.prompt}
+        </div>
+      )}
+      {details?.subagent?.result && (
+        <div className="mt-1 line-clamp-3 text-muted-foreground">{details.subagent.result}</div>
+      )}
+      {activity.meta?.path && <div className="mt-1 truncate text-muted-foreground">{activity.meta.path}</div>}
+      {activity.meta?.command && (
+        <div className="mt-1 truncate font-mono text-muted-foreground">{activity.meta.command}</div>
+      )}
+      {hasChildren && (
+        <div className="mt-2 flex flex-col gap-2">
+          {activity.children!.map((child: AgentActivity) => (
+            <ActivityItem key={child.id} activity={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ActivityTab() {
   const { activeSessionId, sessions } = useStore();
   const session = activeSessionId ? sessions[activeSessionId] : null;
@@ -47,31 +100,7 @@ function ActivityTab() {
         {activeRun.status !== "running" && ` · ${activeRun.status}`}
       </div>
       {activeRun.activities.map((a) => (
-        <div
-          key={a.id}
-          className={cn(
-            "rounded-md border border-border bg-muted/40 p-2.5 text-xs",
-            a.status === "in_progress" && "border-primary/30 bg-primary/5",
-          )}
-        >
-          <div className="flex items-center gap-2 font-medium">
-            <span
-              className={cn(
-                "size-2 rounded-full",
-                a.status === "completed" && "bg-emerald-500",
-                a.status === "failed" && "bg-red-500",
-                a.status === "in_progress" && "bg-primary animate-pulse",
-                a.status === "pending" && "bg-muted-foreground/50",
-              )}
-            />
-            <span className="capitalize">{a.type.replace(/_/g, " ")}</span>
-            <span className="ml-auto text-muted-foreground">{a.title}</span>
-          </div>
-          {a.meta?.path && <div className="mt-1 truncate text-muted-foreground">{a.meta.path}</div>}
-          {a.meta?.command && (
-            <div className="mt-1 truncate font-mono text-muted-foreground">{a.meta.command}</div>
-          )}
-        </div>
+        <ActivityItem key={a.id} activity={a} />
       ))}
       {activeRun.plan && activeRun.plan.length > 0 && (
         <div className="mt-2 rounded-md border border-border p-2.5">

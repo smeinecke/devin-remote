@@ -7,6 +7,7 @@ import type { EventBus } from "./event-bus.js";
 import { nextStatus, isActive, isRunning, type SessionStatus } from "./lifecycle.js";
 import type { AcpProcess } from "./acp-process.js";
 import type { TerminalManager } from "./terminal-manager.js";
+import { SubagentRegistry } from "./subagents.js";
 
 export interface SessionMetadata {
   sessionId: string;
@@ -30,6 +31,8 @@ export interface PermissionRequest {
   sessionId: string;
   toolCall: unknown;
   options: Array<{ optionId: string; name: string; kind: string }>;
+  /** Set when this permission was requested on behalf of a subagent. */
+  subagentId?: string;
 }
 
 export interface SessionSnapshot {
@@ -50,6 +53,7 @@ export interface SessionSnapshot {
   toolCalls?: Record<string, unknown>;
   plan?: unknown | null;
   usage?: unknown | null;
+  subagents?: Record<string, unknown>;
 }
 
 export class SessionController {
@@ -67,6 +71,7 @@ export class SessionController {
   private terminalManager: TerminalManager;
   private cbs: ControllerCallbacks;
   private sessionModes: acp.SessionModeState | null = null;
+  private subagentRegistry: SubagentRegistry;
   dropped = false;
   private pendingAcp: AcpProcess | null = null;
 
@@ -82,6 +87,7 @@ export class SessionController {
     this.eventBus = eventBus;
     this.terminalManager = terminalManager;
     this.cbs = cbs;
+    this.subagentRegistry = new SubagentRegistry(sessionId, 0);
     const now = Date.now();
     this.metadata = {
       sessionId,
@@ -157,6 +163,7 @@ export class SessionController {
       pendingPermissions: [...this.pendingPermissions.values()],
       running: this.isRunning,
       latestSequence: this.eventBus.latestSequence(this.sessionId, this.processGeneration) ?? 0,
+      subagents: this.subagentRegistry.snapshot(),
     };
   }
 
@@ -230,6 +237,7 @@ export class SessionController {
       this.pendingAcp = null;
       this.processGeneration += 1;
       const gen = this.processGeneration;
+      this.subagentRegistry = new SubagentRegistry(this.sessionId, gen);
       const previousGeneration = gen - 1;
       this.terminalManager.releaseFor(this.sessionId, previousGeneration);
       this.eventBus.reset(this.sessionId, gen);
@@ -488,6 +496,11 @@ export class SessionController {
     if (this.status === "idle" && this.activeOperation?.kind === "prompt") {
       this.transition("prompt");
     }
+    const raw = update as unknown as Record<string, unknown>;
+    const subagent = this.subagentRegistry.processUpdate(raw);
+    if (subagent) {
+      this.eventBus.emit(this.sessionId, this.processGeneration, "subagent_update", subagent);
+    }
     this.eventBus.emit(this.sessionId, this.processGeneration, "session_update", update);
     this.metadata.updatedAt = Date.now();
   }
@@ -502,15 +515,25 @@ export class SessionController {
     if (this.status === "running") {
       this.transition("permission");
     }
-    const req: PermissionRequest = { requestId, sessionId: this.sessionId, toolCall, options };
+    const parentAgentId = this.extractSubagentId(toolCall);
+    const req: PermissionRequest = { requestId, sessionId: this.sessionId, toolCall, options, subagentId: parentAgentId ?? undefined };
     this.pendingPermissions.set(requestId, req);
     this.cbs.onPermissionOwner(requestId, this);
+    if (parentAgentId) {
+      const subagent = this.subagentRegistry.addPendingPermission(parentAgentId, requestId);
+      if (subagent) this.eventBus.emit(this.sessionId, this.processGeneration, "subagent_update", subagent);
+    }
     this.eventBus.emit(this.sessionId, this.processGeneration, "permission_request", req);
   }
 
   private handlePermissionResolved(requestId: string) {
     if (this.dropped) return;
+    const req = this.pendingPermissions.get(requestId);
     this.pendingPermissions.delete(requestId);
+    if (req?.subagentId) {
+      const subagent = this.subagentRegistry.resolvePermission(req.subagentId, requestId);
+      if (subagent) this.eventBus.emit(this.sessionId, this.processGeneration, "subagent_update", subagent);
+    }
     this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", { requestId });
     if (this.pendingPermissions.size === 0 && this.status === "waiting_for_permission") {
       this.transition("resolve");
@@ -532,5 +555,13 @@ export class SessionController {
     this.transition("fail");
     this.eventBus.emit(this.sessionId, this.processGeneration, "process_status", { status: "exited", code });
     this.cbs.onExit(this, code);
+  }
+
+  private extractSubagentId(toolCall: unknown): string | null {
+    if (toolCall == null || typeof toolCall !== "object") return null;
+    const tc = toolCall as Record<string, unknown>;
+    const meta = tc._meta as Record<string, unknown> | undefined;
+    const ctx = meta?.["cognition.ai/subagent_context"] as { parentAgentId?: string } | undefined;
+    return ctx?.parentAgentId ?? null;
   }
 }

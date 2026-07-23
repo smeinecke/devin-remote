@@ -1,19 +1,38 @@
-import type { AgentActivity, AgentRun, SessionState, ToolCallState } from "./store-types";
+import type { AgentActivity, AgentRun, SessionState, SubagentDescriptor, ToolCallState } from "./store-types";
 
-function inferActivityType(tool: ToolCallState): AgentActivity["type"] {
+function subagentStatusToActivity(status: SubagentDescriptor["status"]): AgentActivity["status"] {
+  switch (status) {
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "cancelled":
+      return "cancelled";
+    case "running":
+    case "waiting_for_permission":
+      return "in_progress";
+    case "starting":
+    case "unknown":
+    default:
+      return "pending";
+  }
+}
+
+function inferActivityType(tool: ToolCallState, session: SessionState): AgentActivity["type"] {
   const k = (tool.kind || "").toLowerCase();
   const t = (tool.title || "").toLowerCase();
+  if (session.subagents[tool.id]) return "subagent";
+  if (k.includes("subagent")) return "subagent";
   if (k.includes("edit") || k.includes("write") || t.includes("apply") || t.includes("write")) return "file_edit";
   if (k.includes("read") || t.includes("read") || t.includes("view")) return "file_read";
   if (k.includes("exec") || k.includes("bash") || k.includes("shell") || k.includes("command")) return "command";
   if (k.includes("test") || t.includes("test")) return "test";
-  if (k.includes("subagent") || k.includes("agent")) return "subagent";
   if (k.includes("plan") || t.includes("plan")) return "plan";
   if (t.includes("permission")) return "permission";
   return "command";
 }
 
-function makeActivity(tool: ToolCallState): AgentActivity {
+function makeActivity(tool: ToolCallState, session: SessionState): AgentActivity {
   const meta: AgentActivity["meta"] = {};
   for (const c of tool.content ?? []) {
     const item = c as { type: string; path?: string; terminalId?: string };
@@ -23,9 +42,26 @@ function makeActivity(tool: ToolCallState): AgentActivity {
   const raw = tool.rawInput as { command?: string } | undefined;
   if (raw?.command) meta.command = raw.command;
 
+  const subagent = session.subagents[tool.id];
+  if (subagent) {
+    return {
+      id: tool.id,
+      type: "subagent",
+      title: subagent.title ?? tool.title ?? tool.kind ?? "subagent",
+      status: subagentStatusToActivity(subagent.status),
+      startedAt: subagent.startedAt ?? tool.startedAt,
+      completedAt: subagent.completedAt ?? tool.finishedAt ?? undefined,
+      details: { subagent, rawInput: tool.rawInput, rawOutput: tool.rawOutput },
+      autoExpand: subagent.status === "running" || subagent.status === "starting",
+      children: [],
+      subagentId: tool.id,
+      meta,
+    };
+  }
+
   return {
     id: tool.id,
-    type: inferActivityType(tool),
+    type: inferActivityType(tool, session),
     title: tool.title || tool.kind || "tool",
     status: tool.status as AgentActivity["status"],
     startedAt: tool.startedAt,
@@ -33,7 +69,82 @@ function makeActivity(tool: ToolCallState): AgentActivity {
     details: { rawInput: tool.rawInput, rawOutput: tool.rawOutput },
     autoExpand: tool.status === "in_progress",
     meta,
+    subagentId: tool.subagentId ?? undefined,
   };
+}
+
+function buildSubagentActivity(
+  id: string,
+  root: AgentActivity | undefined,
+  children: AgentActivity[],
+  subagents: Record<string, SubagentDescriptor>,
+): AgentActivity {
+  const s = subagents[id];
+  const firstChild = children[0];
+  const title = root?.title ?? s?.title ?? firstChild?.title ?? "subagent";
+  const status = root?.status ?? (s ? subagentStatusToActivity(s.status) : firstChild?.status ?? "in_progress");
+  const startedAt = root?.startedAt ?? s?.startedAt ?? firstChild?.startedAt ?? Date.now();
+  const completedAt = root?.completedAt ?? s?.completedAt ?? firstChild?.completedAt;
+  return {
+    id,
+    type: "subagent",
+    title,
+    status,
+    startedAt,
+    completedAt,
+    details: root?.details ?? (s ? { subagent: s } : undefined),
+    autoExpand: status === "in_progress" || status === "pending",
+    children: [...(root?.children ?? []), ...children],
+    subagentId: id,
+  };
+}
+
+function nestSubagentActivities(activities: AgentActivity[], subagents: Record<string, SubagentDescriptor>): AgentActivity[] {
+  interface Group {
+    root?: AgentActivity;
+    children: AgentActivity[];
+    firstIndex: number;
+  }
+  const groups = new Map<string, Group>();
+  activities.forEach((a, i) => {
+    if (a.type === "subagent" && a.subagentId && a.id === a.subagentId) {
+      const g = groups.get(a.subagentId) ?? { children: [], firstIndex: i };
+      g.root = a;
+      groups.set(a.subagentId, g);
+    } else if (a.subagentId) {
+      const g = groups.get(a.subagentId) ?? { children: [], firstIndex: i };
+      g.children.push(a);
+      if (i < g.firstIndex) g.firstIndex = i;
+      groups.set(a.subagentId, g);
+    }
+  });
+
+  const emitted = new Set<string>();
+  const result: AgentActivity[] = [];
+  activities.forEach((a, i) => {
+    if (!a.subagentId) {
+      result.push(a);
+      return;
+    }
+    const id = a.subagentId;
+    if (emitted.has(id)) return;
+    const g = groups.get(id);
+    if (!g) {
+      // No group info — emit as-is (shouldn't happen).
+      result.push(a);
+      return;
+    }
+    if (a.type === "subagent" && a.id === id) {
+      emitted.add(id);
+      result.push(buildSubagentActivity(id, g.root, g.children, subagents));
+      return;
+    }
+    if (g.firstIndex === i) {
+      emitted.add(id);
+      result.push(buildSubagentActivity(id, g.root, g.children, subagents));
+    }
+  });
+  return result;
 }
 
 function runStatusFromSession(status: SessionState["status"], running: boolean): AgentRun["status"] {
@@ -69,6 +180,7 @@ export function rebuildRuns(d: SessionState): void {
     if (current.status !== "running" && current.status !== "waiting_for_permission") {
       current.completedAt ??= Date.now();
     }
+    current.activities = nestSubagentActivities(current.activities, d.subagents);
     runs[current.id] = current;
     current = null;
   };
@@ -135,10 +247,11 @@ export function rebuildRuns(d: SessionState): void {
       }
       const existing = current.activities.find((a) => a.id === t.id);
       if (existing) {
-        existing.status = t.status as AgentActivity["status"];
-        existing.completedAt = t.finishedAt ?? undefined;
+        const subagent = d.subagents[t.id];
+        existing.status = subagent ? subagentStatusToActivity(subagent.status) : (t.status as AgentActivity["status"]);
+        existing.completedAt = subagent?.completedAt ?? t.finishedAt ?? existing.completedAt;
       } else {
-        current.activities.push(makeActivity(t));
+        current.activities.push(makeActivity(t, d));
       }
     }
   }
