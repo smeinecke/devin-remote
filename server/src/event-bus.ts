@@ -19,7 +19,8 @@ export type EventType =
   | "agent_log"
   | "process_status"
   | "prompt_done"
-  | "generation_changed";
+  | "generation_changed"
+  | "session_dropped";
 
 interface SessionEvent<T = unknown> {
   sessionId: string;

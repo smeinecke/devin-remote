@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { createSession, renameSession, selectSession, setUi, showNotice, useStore } from "../state";
+import { createSession, dropSession, renameSession, selectSession, setUi, showNotice, useStore } from "../state";
 import type { SessionState } from "../state";
 import { formatTokens, relTime } from "../utils";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ import {
   PencilIcon,
   ScrollTextIcon,
   SquareTerminalIcon,
+  Trash2Icon,
 } from "lucide-react";
 
 const SessionChat = lazy(() => import("./SessionChat"));
@@ -162,6 +163,17 @@ function OverflowMenu({ session }: { session: SessionState }) {
             }}
           >
             <ChartColumnIcon className="size-3.5 text-muted-foreground" /> Usage
+          </button>
+          <button
+            className={cn(item, "text-red-600 hover:text-red-700")}
+            onClick={() => {
+              if (window.confirm(`Drop session "${sessionLabel(session)}"?`)) {
+                void dropSession(session.sessionId);
+              }
+              setOpen(false);
+            }}
+          >
+            <Trash2Icon className="size-3.5" /> Drop session
           </button>
         </div>
       )}

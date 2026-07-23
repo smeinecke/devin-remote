@@ -40,7 +40,7 @@ export const api = {
     req<{ ok: boolean; status: string; processGeneration: number }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/attach`),
 
   openSession: (sessionId: string, cwd?: string) =>
-    req<{ ok: boolean; status: string; processGeneration: number; branch: string | null; worktree: string | null }>(
+    req<{ ok: boolean; status: string; processGeneration: number; sessionId: string; branch: string | null; worktree: string | null }>(
       "POST",
       `/api/sessions/${encodeURIComponent(sessionId)}/open`,
       { cwd },
@@ -60,6 +60,9 @@ export const api = {
 
   closeSession: (sessionId: string) =>
     req<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/close`, {}),
+
+  dropSession: (sessionId: string) =>
+    req<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/drop`, {}),
 
   history: (sessionId: string) =>
     req<{ updates: SessionUpdate[] }>("GET", `/api/sessions/${encodeURIComponent(sessionId)}/history`),

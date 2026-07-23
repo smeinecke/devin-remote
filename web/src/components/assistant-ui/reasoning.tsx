@@ -25,12 +25,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { makeReasoningPreview } from "@/utils";
 
 const ANIMATION_DURATION = 200;
 
 const ReasoningPreviewContext = createContext(false);
 
-const reasoningVariants = cva("aui-reasoning-root mb-4 w-full", {
+const reasoningVariants = cva("aui-reasoning-root mb-2 w-full", {
   variants: {
     variant: {
       outline: "rounded-lg border px-3 py-2",
@@ -39,7 +40,7 @@ const reasoningVariants = cva("aui-reasoning-root mb-4 w-full", {
     },
   },
   defaultVariants: {
-    variant: "outline",
+    variant: "ghost",
   },
 });
 
@@ -166,50 +167,59 @@ function ReasoningFade({
 function ReasoningTrigger({
   active,
   duration,
+  text,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
   active?: boolean;
   duration?: number;
+  text?: string;
 }) {
-  const durationText = duration ? ` (${duration}s)` : "";
+  const preview = text ? makeReasoningPreview(text) : "";
+
+  if (!preview && !active) {
+    return null;
+  }
 
   return (
     <CollapsibleTrigger
+      aria-label="Show reasoning"
       data-slot="reasoning-trigger"
       className={cn(
-        "aui-reasoning-trigger group/trigger text-muted-foreground hover:text-foreground flex max-w-[75%] origin-left items-center gap-2 py-1.5 text-sm transition-[color,scale] active:scale-[0.98]",
+        "aui-reasoning-trigger group/trigger flex w-full min-w-0 items-start gap-2 py-1 text-sm transition-[color,scale] active:scale-[0.98]",
+        active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
         className,
       )}
       {...props}
     >
       <BrainIcon
         data-slot="reasoning-trigger-icon"
-        className="aui-reasoning-trigger-icon size-4 shrink-0"
+        className="aui-reasoning-trigger-icon mt-0.5 size-4 shrink-0"
       />
+      <span className="sr-only">Reasoning</span>
       <span
-        data-slot="reasoning-trigger-label"
-        className="aui-reasoning-trigger-label-wrapper relative inline-block leading-none tabular-nums"
+        data-slot="reasoning-trigger-preview"
+        className={cn(
+          "aui-reasoning-trigger-preview min-w-0 flex-1 text-left line-clamp-2",
+          active && "text-foreground",
+        )}
       >
-        <span>Reasoning{durationText}</span>
-        {active ? (
-          <span
-            aria-hidden
-            data-slot="reasoning-trigger-shimmer"
-            className="aui-reasoning-trigger-shimmer shimmer pointer-events-none absolute inset-0 motion-reduce:animate-none"
-          >
-            Reasoning{durationText}
-          </span>
-        ) : null}
+        {preview}
       </span>
+      {duration ? (
+        <span
+          data-slot="reasoning-trigger-duration"
+          className="tnum shrink-0 text-xs text-muted-foreground"
+        >
+          {duration}s
+        </span>
+      ) : null}
       <ChevronDownIcon
         data-slot="reasoning-trigger-chevron"
         className={cn(
           "aui-reasoning-trigger-chevron mt-0.5 size-4 shrink-0",
           "transition-transform duration-(--animation-duration) ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
-          "-rotate-90",
-          "group-data-open/trigger:rotate-0",
-          "group-data-panel-open/trigger:rotate-0",
+          "group-data-[state=open]/trigger:rotate-180",
         )}
       />
     </CollapsibleTrigger>
@@ -274,7 +284,7 @@ function ReasoningText({
       ref={scrollRef}
       data-slot="reasoning-text"
       className={cn(
-        "aui-reasoning-text relative z-0 max-h-64 overflow-y-auto ps-6 pt-2 pb-2 leading-relaxed text-pretty",
+        "aui-reasoning-text relative z-0 max-h-64 overflow-y-auto ps-5 pt-1 pb-1 leading-relaxed text-pretty",
         "transform-gpu transition-[transform,opacity] ease-[cubic-bezier(0.32,0.72,0,1)]",
         "motion-reduce:animate-none",
         "group-data-open/collapsible-content:animate-in",
@@ -291,7 +301,7 @@ function ReasoningText({
       )}
       {...props}
     >
-      <div ref={contentRef} className="aui-reasoning-text-content space-y-4">
+      <div ref={contentRef} className="aui-reasoning-text-content space-y-2">
         {children}
       </div>
     </div>
@@ -314,9 +324,22 @@ const ReasoningGroupImpl: ReasoningGroupComponent = ({
     return lastIndex >= startIndex && lastIndex <= endIndex;
   });
 
+  const text = useAuiState((s) => {
+    const parts = s.message.parts.slice(startIndex, endIndex + 1);
+    return parts
+      .filter((p) => p.type === "reasoning")
+      .map((p) => (p as any).text as string)
+      .join("");
+  });
+
+  const preview = makeReasoningPreview(text);
+  if (!preview && !isReasoningStreaming) {
+    return null;
+  }
+
   return (
-    <ReasoningRoot streaming={isReasoningStreaming}>
-      <ReasoningTrigger active={isReasoningStreaming} />
+    <ReasoningRoot streaming={isReasoningStreaming} variant={isReasoningStreaming ? "muted" : "ghost"}>
+      <ReasoningTrigger active={isReasoningStreaming} text={text} />
       <ReasoningContent aria-busy={isReasoningStreaming}>
         <ReasoningText>{children}</ReasoningText>
       </ReasoningContent>

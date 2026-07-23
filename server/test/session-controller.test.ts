@@ -80,6 +80,7 @@ function makeFactory(processes: FakeAcpProcess[]) {
 
 const fakeTerminalManager = {
   releaseFor: () => {},
+  releaseSession: () => {},
 } as any;
 
 describe("SessionController", () => {
@@ -264,5 +265,28 @@ describe("SessionController", () => {
 
     await c.attach(failingFactory);
     assert.strictEqual(c.status, "idle");
+  });
+
+  it("drops a session, kills the process, and emits session_dropped", async () => {
+    const bus = new EventBus();
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, bus, {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+
+    const emitted: any[] = [];
+    bus.subscribe((_sid, env) => emitted.push(env));
+
+    await c.drop();
+
+    assert.strictEqual(c.dropped, true);
+    assert.strictEqual(c.status, "closed");
+    assert.strictEqual(processes[0].killed, true);
+    const dropped = emitted.find((e) => e.type === "event" && e.eventType === "session_dropped");
+    assert.ok(dropped);
+    assert.strictEqual(dropped.payload.sessionId, c.sessionId);
   });
 });

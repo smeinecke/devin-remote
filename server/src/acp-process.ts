@@ -90,7 +90,8 @@ export class AcpProcess {
     const client: acp.Client = {
       sessionUpdate: (params) => {
         if (params.sessionId !== self.sessionId) return;
-        cbs.onSessionUpdate(params);
+        const wrapper = params as unknown as { update?: acp.SessionNotification };
+        cbs.onSessionUpdate(wrapper.update ?? (params as acp.SessionNotification));
       },
 
       requestPermission: (params) => {
@@ -255,6 +256,17 @@ export class AcpProcess {
       }
     }
     return false;
+  }
+
+  async deleteSession(): Promise<boolean> {
+    if (!this.capabilities?.agentCapabilities?.sessionCapabilities?.delete) return false;
+    if (this.exited) return false;
+    try {
+      await this.conn.deleteSession({ sessionId: this.sessionId });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   kill() {

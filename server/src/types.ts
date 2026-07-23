@@ -26,6 +26,7 @@ export interface StoreShape {
   workspaces: string[];
   usage: UsageRecord[];
   sessions: Record<string, SessionMetadata>;
+  droppedSessions: string[];
   settings: {
     theme: "dark" | "light" | "system";
     soundComplete: boolean;

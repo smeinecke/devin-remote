@@ -21,8 +21,10 @@ import {
 import type { ToolCallState } from "../state";
 import { setUi, useStore } from "../state";
 import type { ToolCallContent } from "../types";
+import type { SessionState } from "../store-types";
 import DiffView from "./DiffView";
 import { cn } from "@/lib/utils";
+import { shortenWorkspacePath, toolCallPrimaryLabel } from "../utils";
 
 function KindIcon({ kind }: { kind: string }) {
   const k = (kind || "").toLowerCase();
@@ -94,7 +96,7 @@ function TerminalOpenButton({ terminalId }: { terminalId: string }) {
   );
 }
 
-function ContentItem({ item }: { item: ToolCallContent }) {
+function ContentItem({ item, session }: { item: ToolCallContent; session?: SessionState | null }) {
   if (item.type === "content") {
     const text = (item as { content?: { text?: string } }).content?.text;
     if (!text) return null;
@@ -106,7 +108,7 @@ function ContentItem({ item }: { item: ToolCallContent }) {
   }
   if (item.type === "diff") {
     const d = item as { path: string; oldText: string | null; newText: string };
-    return <DiffView path={d.path} oldText={d.oldText} newText={d.newText} />;
+    return <DiffView path={d.path} displayPath={shortenWorkspacePath(d.path, session)} oldText={d.oldText} newText={d.newText} />;
   }
   if (item.type === "terminal") {
     const tid = (item as { terminalId: string }).terminalId;
@@ -123,10 +125,14 @@ function ContentItem({ item }: { item: ToolCallContent }) {
 
 const ToolCard: FC<{ call: ToolCallState }> = ({ call }) => {
   const [open, setOpen] = useState(false);
+  const session = useStore((s) => (s.activeSessionId ? s.sessions[s.activeSessionId] : null));
   const inProgress = call.status === "in_progress" || call.status === "pending";
   const expanded = open || inProgress;
   const hasBody = call.content.length > 0 || call.rawInput != null || call.rawOutput != null;
   const duration = durationLabel(call);
+  const title = toolCallPrimaryLabel(call, session);
+  const firstLoc = call.locations?.[0]?.path;
+  const shortFirstLoc = firstLoc && firstLoc !== title ? shortenWorkspacePath(firstLoc, session) : null;
 
   return (
     <div
@@ -137,7 +143,7 @@ const ToolCard: FC<{ call: ToolCallState }> = ({ call }) => {
     >
       <button
         className={cn(
-          "flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] transition-colors",
+          "flex w-full min-w-0 items-center gap-2 px-2.5 py-1.5 text-left text-[13px] transition-colors",
           hasBody && "hover:bg-accent/50 cursor-pointer",
         )}
         onClick={() => hasBody && setOpen((o) => !o)}
@@ -148,18 +154,18 @@ const ToolCard: FC<{ call: ToolCallState }> = ({ call }) => {
         </span>
         <StatusIcon status={call.status} />
         <span className="min-w-0 flex-1 truncate font-medium text-foreground/90" title={call.title}>
-          {call.title}
+          {title}
         </span>
-        {call.locations && call.locations.length > 0 && (
+        {shortFirstLoc && (
           <span className="tnum hidden max-w-40 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground sm:inline">
-            {call.locations[0].path}
+            {shortFirstLoc}
           </span>
         )}
-        {duration && <span className="tnum font-mono text-[11px] text-muted-foreground">{duration}</span>}
+        {duration && <span className="tnum shrink-0 font-mono text-[11px] text-muted-foreground">{duration}</span>}
         {hasBody && (
           <ChevronRightIcon
             className={cn(
-              "size-3.5 text-muted-foreground transition-transform duration-150",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
               expanded && "rotate-90",
             )}
           />
@@ -167,21 +173,24 @@ const ToolCard: FC<{ call: ToolCallState }> = ({ call }) => {
       </button>
       {expanded && hasBody && (
         <div className="flex flex-col gap-2 border-t border-border px-2.5 py-2">
-          {call.locations && call.locations.length > 1 && (
+          {call.locations && call.locations.length > 0 && (
             <div className="flex flex-wrap gap-1">
-              {call.locations.map((loc, i) => (
-                <span
-                  key={i}
-                  className="tnum rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
-                >
-                  {loc.path}
-                  {loc.line != null ? `:${loc.line}` : ""}
-                </span>
-              ))}
+              {call.locations.map((loc, i) => {
+                const p = shortenWorkspacePath(loc.path, session) || loc.path;
+                return (
+                  <span
+                    key={i}
+                    className="tnum rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+                  >
+                    {p}
+                    {loc.line != null ? `:${loc.line}` : ""}
+                  </span>
+                );
+              })}
             </div>
           )}
           {call.content.map((item, i) => (
-            <ContentItem key={i} item={item} />
+            <ContentItem key={i} item={item} session={session} />
           ))}
           <RawDetails label="input" raw={call.rawInput} />
           <RawDetails label="output" raw={call.rawOutput} />

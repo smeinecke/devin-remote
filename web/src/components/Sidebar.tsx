@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { api } from "../api";
 import {
   createSession,
+  dropSession,
   refreshSessions,
   renameSession,
   selectSession,
@@ -27,6 +28,7 @@ import {
   RefreshCwIcon,
   SearchIcon,
   SettingsIcon,
+  Trash2Icon,
   XIcon,
 } from "lucide-react";
 
@@ -278,6 +280,20 @@ export default function Sidebar() {
                     }}
                   >
                     <CopyIcon className="size-3.5" />
+                  </TooltipIconButton>
+                  <TooltipIconButton
+                    tooltip="Drop session"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-red-500"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Drop session "${sessionLabel(s)}"?`)) {
+                        void dropSession(s.sessionId);
+                      }
+                    }}
+                  >
+                    <Trash2Icon className="size-3.5" />
                   </TooltipIconButton>
                 </div>
               </>

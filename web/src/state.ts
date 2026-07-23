@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { api } from "./api";
-import { subscribeSession, updateCursor, cursors } from "./ws";
+import { subscribeSession, updateCursor, removeCursor, cursors } from "./ws";
 import { notifyDesktop, soundComplete, soundNotify } from "./sound";
 import type {
   Attachment,
@@ -15,7 +15,7 @@ import type {
   ToolCallContent,
   ToolCallState,
 } from "./store-types";
-import { mentionToUri, extractMentions } from "./utils";
+import { mentionToUri, extractMentions, randomUUID } from "./utils";
 import { rebuildRuns } from "./runs";
 import type {
   MetaResponse,
@@ -231,14 +231,24 @@ export async function selectSession(sessionId: string): Promise<void> {
   // Idempotent attach: does not reload a running session.
   try {
     const open = await api.openSession(sessionId, s.cwd);
-    updateSession(sessionId, (d) => {
+    const finalId = open.sessionId || sessionId;
+    if (finalId !== sessionId) {
+      updateSession(sessionId, (d) => {
+        d.sessionId = finalId;
+      });
+      setState({
+        sessions: { ...state.sessions, [finalId]: { ...state.sessions[sessionId]!, sessionId: finalId } },
+        activeSessionId: finalId,
+      });
+    }
+    updateSession(finalId, (d) => {
       d.synced = true;
       d.processGeneration = open.processGeneration;
       d.status = open.status as SessionState["status"];
       d.branch = open.branch ?? d.branch;
       d.worktree = open.worktree ?? d.worktree;
     });
-    subscribeSession(sessionId, open.processGeneration, 0);
+    subscribeSession(finalId, open.processGeneration, 0);
   } catch (err) {
     showNotice(err instanceof Error ? err.message : "failed to open session");
   }
@@ -253,6 +263,35 @@ export async function renameSession(sessionId: string, title: string): Promise<v
   } catch (err) {
     showNotice(err instanceof Error ? err.message : "rename failed");
   }
+}
+
+function removeSession(sessionId: string): void {
+  const next = { ...state.sessions };
+  delete next[sessionId];
+  const nextTerminals: Record<string, TerminalMeta> = {};
+  for (const [id, meta] of Object.entries(state.terminals)) {
+    if (meta.sessionId === sessionId) {
+      termBuffers.delete(id);
+    } else {
+      nextTerminals[id] = meta;
+    }
+  }
+  setState({
+    sessions: next,
+    terminals: nextTerminals,
+    activeSessionId: state.activeSessionId === sessionId ? null : state.activeSessionId,
+  });
+  removeCursor(sessionId);
+}
+
+export async function dropSession(sessionId: string): Promise<void> {
+  try {
+    await api.dropSession(sessionId);
+  } catch (err) {
+    showNotice(err instanceof Error ? err.message : "failed to drop session");
+    return;
+  }
+  removeSession(sessionId);
 }
 
 // Reducer for session updates
@@ -302,7 +341,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
         };
         d.toolCalls = { ...d.toolCalls, [tc.id]: tc };
         if (!existing) d.timeline = [...d.timeline, { kind: "tool", id: tc.id }];
-        registerTerminalsFromContent(sessionId, processGeneration, tc.content);
+        registerTerminalsFromContent(sessionId, d.processGeneration, tc.content);
         break;
       }
       case "tool_call_update": {
@@ -321,7 +360,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
           };
           d.toolCalls = { ...d.toolCalls, [tc.id]: tc };
           d.timeline = [...d.timeline, { kind: "tool", id: tc.id }];
-          registerTerminalsFromContent(sessionId, processGeneration, tc.content);
+          registerTerminalsFromContent(sessionId, d.processGeneration, tc.content);
           break;
         }
         const merged: ToolCallState = {
@@ -335,7 +374,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
               : existing.finishedAt,
         };
         d.toolCalls = { ...d.toolCalls, [merged.id]: merged };
-        if (u.content) registerTerminalsFromContent(sessionId, processGeneration, u.content);
+        if (u.content) registerTerminalsFromContent(sessionId, d.processGeneration, u.content);
         break;
       }
       case "plan": {
@@ -506,7 +545,7 @@ export async function sendPrompt(sessionId: string, text: string, attachments: A
 
   const id = `m${++msgSeq}`;
   const msg: ChatMessage = { id, role: "user", text, attachments, streaming: false, ts: Date.now() };
-  const token = crypto.randomUUID();
+  const token = randomUUID();
   const generation = s.processGeneration;
 
   updateSession(sessionId, (d) => {
@@ -683,7 +722,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
     // says it is complete and provides a materialized state. Otherwise merge
     // events into the existing view and preserve already-applied sequences.
     const replacing = s.complete && s.state != null;
-    const snapshotState = (s.state ?? {}) as Partial<SessionState>;
+    const snapshotState = (s.state ?? {}) as Partial<SessionState> & { pendingPermissions?: unknown };
     ensureSession({
       sessionId: s.sessionId,
       cwd: snapshotState.cwd ?? state.meta?.primaryCwd ?? "",
@@ -824,6 +863,11 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
     case "permission_resolved": {
       const p = payload as { requestId: string };
       removePermission(p.requestId);
+      break;
+    }
+    case "session_dropped": {
+      const p = payload as { sessionId: string };
+      removeSession(p.sessionId);
       break;
     }
     case "terminal_output": {

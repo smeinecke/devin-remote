@@ -1,11 +1,159 @@
 // Small shared helpers — time, numbers, fuzzy match, line diff.
 
+/** Generate a UUID v4, falling back for non-secure (`http://`) contexts. */
+export function randomUUID(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
 export function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+/**
+ * Produce a compact plain-text preview from reasoning content.
+ * Collapses whitespace, removes Markdown heading/blockquote markers, replaces
+ * fenced code blocks with a marker, and only appends an ellipsis when truncated.
+ */
+export function makeReasoningPreview(text: string, maxLength = 220): string {
+  const compact = text
+    .replace(/```[\s\S]*?```/g, " [code] ")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!compact) return "";
+  if (compact.length <= maxLength) return compact;
+
+  return `${compact.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+export interface WorkspaceSession {
+  cwd?: string;
+  worktree?: string | null;
+}
+
+/**
+ * Strip generated worktree / cwd prefixes from an absolute path so compact rows
+ * show repository-relative paths. Falls back to the original (or basename) when
+ * no prefix matches. Also accepts `file://` URIs.
+ */
+export function shortenWorkspacePath(p: string, session?: WorkspaceSession | null): string {
+  if (!p) return "";
+  let clean = p;
+  if (clean.startsWith("file:///")) clean = clean.slice(7);
+  else if (clean.startsWith("file://")) clean = clean.slice(6);
+  clean = clean.replace(/\\/g, "/").replace(/\/+/g, "/");
+
+  const candidates = [session?.worktree, session?.cwd].filter((b): b is string => Boolean(b));
+  for (const base of candidates) {
+    const b = base.replace(/\/+$/, "");
+    if (clean === b) return "";
+    if (clean.startsWith(`${b}/`)) {
+      const rel = clean.slice(b.length + 1);
+      return rel || basename(clean);
+    }
+  }
+
+  return clean;
+}
+
+export interface ToolCallLike {
+  kind: string;
+  title: string;
+  rawInput?: unknown;
+  content?: Array<{ type?: string; path?: string }>;
+  locations?: Array<{ path?: string }>;
+}
+
+function joinCommand(cmd: unknown, args: unknown): string {
+  const parts: string[] = [];
+  if (typeof cmd === "string") parts.push(cmd);
+  if (Array.isArray(args)) {
+    for (const a of args) {
+      if (typeof a === "string") parts.push(a);
+    }
+  }
+  return parts.join(" ");
+}
+
+function looksLikePath(s: string): boolean {
+  return s.startsWith("/") || s.startsWith("./") || s.startsWith("../") || /^[a-zA-Z]:[/\\]/.test(s);
+}
+
+/**
+ * Derive a compact primary label for a tool call row.
+ * Prefers concrete input (command, path, query) over generic titles, and strips
+ * absolute worktree prefixes from displayed paths.
+ */
+export function toolCallPrimaryLabel(call: ToolCallLike, session?: WorkspaceSession | null): string {
+  const fallback = call.title || call.kind || "tool";
+
+  // 1. raw input
+  if (call.rawInput != null) {
+    if (typeof call.rawInput === "string") {
+      const t = call.rawInput.trim();
+      if (t) return looksLikePath(t) ? shortenWorkspacePath(t, session) : t;
+    } else if (typeof call.rawInput === "object") {
+      const r = call.rawInput as Record<string, unknown>;
+      if (typeof r.command === "string" || Array.isArray(r.args)) {
+        const c = joinCommand(r.command, r.args);
+        if (c) return c;
+      }
+      for (const key of ["path", "file_path", "file", "target"]) {
+        const v = r[key];
+        if (typeof v === "string" && v.trim()) {
+          return shortenWorkspacePath(v, session) || v;
+        }
+      }
+      for (const key of ["query", "pattern", "text", "search"]) {
+        const v = r[key];
+        if (typeof v === "string" && v.trim()) return v.trim();
+      }
+    }
+  }
+
+  // 2. content (diff paths)
+  for (const item of call.content ?? []) {
+    if (item?.type === "diff" && typeof item.path === "string" && item.path) {
+      const short = shortenWorkspacePath(item.path, session);
+      if (short) return short;
+    }
+  }
+
+  // 3. locations
+  for (const loc of call.locations ?? []) {
+    if (typeof loc?.path === "string" && loc.path) {
+      const short = shortenWorkspacePath(loc.path, session);
+      if (short) return short;
+    }
+  }
+
+  // 4. title: strip common leading verbs and use the remainder if it looks useful
+  const cleaned = fallback.replace(/^(Ran|Running|Executed|Search|Searched|Edit|Edited|Write|Wrote|Read|Delete|Deleted|Move|Moved)\s+(command\s+)?/i, "");
+  if (cleaned && cleaned !== fallback) {
+    const trimmed = cleaned.trim();
+    if (looksLikePath(trimmed)) return shortenWorkspacePath(trimmed, session) || trimmed;
+    return trimmed;
+  }
+
+  return fallback;
 }
 
 export function basename(p: string): string {

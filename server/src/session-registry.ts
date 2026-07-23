@@ -71,6 +71,10 @@ export class SessionRegistry {
     this.starting.set(sessionId, p);
     try {
       await p;
+      if (c.dropped) {
+        this.controllers.delete(c.sessionId);
+        return;
+      }
       if (c.sessionId !== sessionId) {
         this.controllers.delete(sessionId);
         this.controllers.set(c.sessionId, c);
@@ -96,6 +100,11 @@ export class SessionRegistry {
     try {
       await p;
       const finalId = c.sessionId;
+      if (c.dropped) {
+        this.controllers.delete(placeholder);
+        this.controllers.delete(finalId);
+        throw new Error("session dropped while starting");
+      }
       this.controllers.delete(placeholder);
       this.controllers.set(finalId, c);
       return { sessionId: finalId, processGeneration: c.processGeneration, cwd, modes: c.modes };
@@ -105,6 +114,18 @@ export class SessionRegistry {
     } finally {
       this.starting.delete(placeholder);
     }
+  }
+
+  /** Drop a session: kill its process, release resources, and remove it. */
+  async drop(sessionId: string): Promise<boolean> {
+    const c = this.controllers.get(sessionId);
+    if (!c) return false;
+    this.controllers.delete(sessionId);
+    this.starting.delete(sessionId);
+    for (const [requestId, owner] of this.permissionOwners) {
+      if (owner === c) this.permissionOwners.delete(requestId);
+    }
+    return c.drop();
   }
 
   /** Resolve a permission request by routing to the owning controller. */

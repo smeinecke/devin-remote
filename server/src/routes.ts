@@ -5,6 +5,7 @@ import type { SessionRegistry } from "./session-registry.js";
 import type { Store } from "./store.js";
 import type { WsSubscriber } from "./ws-subscriber.js";
 import type { UsageRecord } from "./types.js";
+import type { SessionMetadata as ControllerSessionMetadata } from "./session-controller.js";
 import { saveUpload, serveUpload, uploadPath } from "./uploads.js";
 import { buildSessionZip } from "./export.js";
 import { isGitRepository, createWorktree, cleanupWorktree, rollbackCreatedWorktree } from "./worktree.js";
@@ -40,6 +41,16 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return JSON.parse(buf.toString("utf8"));
 }
 
+async function resolveCwd(ctx: ApiContext, sessionId: string, preferred?: string): Promise<string> {
+  const candidate = preferred ?? ctx.store.session(sessionId)?.cwd ?? ctx.primaryCwd;
+  try {
+    const st = await fs.stat(candidate);
+    if (st.isDirectory()) return candidate;
+  } catch {}
+  // If the stored worktree was removed (e.g. by git worktree cleanup), fall back.
+  return ctx.primaryCwd;
+}
+
 async function normalizeBlocks(store: Store, blocks: unknown[]): Promise<ContentBlock[]> {
   const out: ContentBlock[] = [];
   for (const raw of blocks) {
@@ -67,6 +78,18 @@ function requireController(ctx: ApiContext, sessionId: string, cwd?: string) {
   return c;
 }
 
+function controllerMeta(ctx: ApiContext, sessionId: string, cwd?: string): Partial<ControllerSessionMetadata> {
+  const meta = ctx.store.session(sessionId);
+  return {
+    sessionId,
+    cwd: cwd ?? meta?.cwd ?? ctx.primaryCwd,
+    title: meta?.title ?? null,
+    alias: meta?.alias ?? ctx.store.alias(sessionId) ?? null,
+    branch: meta?.branch ?? null,
+    worktree: meta?.worktree ?? null,
+  };
+}
+
 export async function handleApi(
   ctx: ApiContext,
   req: IncomingMessage,
@@ -92,6 +115,7 @@ export async function handleApi(
       const remote = await ctx.registry.listRemote(ctx.primaryCwd);
       const sessions = [];
       for (const s of remote.sessions ?? []) {
+        if (ctx.store.isDropped(s.sessionId)) continue;
         ctx.store.ensureSession(s.sessionId, { cwd: s.cwd, title: s.title ?? null });
         sessions.push({
           sessionId: s.sessionId,
@@ -148,35 +172,39 @@ export async function handleApi(
     if (parts[1] === "sessions" && parts.length >= 4) {
       const id = decodeURIComponent(parts[2]);
       const action = parts[3];
-      const c = requireController(ctx, id);
+
+      if (m === "POST" && action === "drop") {
+        const c = ctx.registry.get(id);
+        if (c) await ctx.registry.drop(id);
+        ctx.store.dropSession(id);
+        return json(res, 200, { ok: true });
+      }
 
       if (m === "POST" && action === "open") {
-        await ctx.registry.attach(id, c.cwd, {
-          title: c.title,
-          alias: c.alias,
-          branch: c.branch,
-          worktree: c.worktree,
-        });
+        const body = await readJson(req);
+        const cwd = await resolveCwd(ctx, id, body.cwd ? String(body.cwd) : undefined);
+        await ctx.registry.attach(id, cwd, controllerMeta(ctx, id, cwd));
+        const c = ctx.registry.get(id)!;
         return json(res, 200, {
           ok: true,
           status: c.currentStatus,
           processGeneration: c.processGeneration,
+          sessionId: c.sessionId,
           branch: c.branch,
           worktree: c.worktree,
         });
       }
 
       if (m === "POST" && action === "attach") {
-        await ctx.registry.attach(id, c.cwd, {
-          title: c.title,
-          alias: c.alias,
-          branch: c.branch,
-          worktree: c.worktree,
-        });
+        const body = await readJson(req);
+        const cwd = await resolveCwd(ctx, id, body.cwd ? String(body.cwd) : undefined);
+        await ctx.registry.attach(id, cwd, controllerMeta(ctx, id, cwd));
+        const c = ctx.registry.get(id)!;
         return json(res, 200, {
           ok: true,
           status: c.currentStatus,
           processGeneration: c.processGeneration,
+          sessionId: c.sessionId,
         });
       }
 
@@ -184,13 +212,21 @@ export async function handleApi(
         const body = await readJson(req);
         const blocks = await normalizeBlocks(ctx.store, (body.blocks as unknown[]) ?? []);
         if (blocks.length === 0) return json(res, 400, { error: "empty prompt" });
-        await ctx.registry.attach(id, c.cwd);
+        let c = ctx.registry.get(id);
+        if (!c) {
+          const cwd = await resolveCwd(ctx, id, body.cwd ? String(body.cwd) : undefined);
+          await ctx.registry.attach(id, cwd, controllerMeta(ctx, id, cwd));
+          c = ctx.registry.get(id)!;
+        } else {
+          const cwd = await resolveCwd(ctx, id, c.cwd);
+          await ctx.registry.attach(id, cwd);
+        }
         const done = await c.prompt(blocks);
         const usage = (done as { usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number } }).usage;
         if (usage?.totalTokens) {
           const rec: UsageRecord = {
             ts: Date.now(),
-            sessionId: id,
+            sessionId: c.sessionId,
             cwd: c.cwd,
             inputTokens: usage.inputTokens ?? 0,
             outputTokens: usage.outputTokens ?? 0,
@@ -200,6 +236,8 @@ export async function handleApi(
         }
         return json(res, 200, done);
       }
+
+      const c = requireController(ctx, id);
 
       if (m === "POST" && action === "cancel") {
         await c.cancel();

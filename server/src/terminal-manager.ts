@@ -209,6 +209,17 @@ export class TerminalManager {
     }
   }
 
+  /** Remove all terminals for a session across every generation. */
+  releaseSession(sessionId: string) {
+    for (const [id, t] of this.terminals) {
+      if (t.sessionId === sessionId) {
+        this.procs.get(id)?.kill("SIGKILL");
+        this.terminals.delete(id);
+        this.procs.delete(id);
+      }
+    }
+  }
+
   /** Resize a PTY if the terminal was created with usePty. */
   resize(_terminalId: string, _cols: number, _rows: number) {
     // PTY resize is a no-op in this implementation; native pty is not required.

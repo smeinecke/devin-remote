@@ -9,6 +9,7 @@ const DEFAULTS: StoreShape = {
   workspaces: [],
   usage: [],
   sessions: {},
+  droppedSessions: [],
   settings: {
     theme: "dark",
     soundComplete: true,
@@ -62,6 +63,7 @@ export class Store {
         ...raw,
         settings: { ...DEFAULTS.settings, ...(raw.settings ?? {}) },
         sessions: { ...DEFAULTS.sessions, ...(raw.sessions ?? {}) },
+        droppedSessions: [...(raw.droppedSessions ?? [])],
       };
     } catch {
       return structuredClone(DEFAULTS);
@@ -195,6 +197,19 @@ export class Store {
     this.ensureSession(sessionId);
     Object.assign(this.data.sessions[sessionId]!, patch);
     this.save();
+  }
+
+  dropSession(sessionId: string) {
+    delete this.data.aliases[sessionId];
+    delete this.data.sessions[sessionId];
+    if (!this.data.droppedSessions.includes(sessionId)) {
+      this.data.droppedSessions.push(sessionId);
+    }
+    this.save();
+  }
+
+  isDropped(sessionId: string): boolean {
+    return this.data.droppedSessions.includes(sessionId);
   }
 
   recordUsage(rec: UsageRecord) {

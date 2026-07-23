@@ -67,6 +67,8 @@ export class SessionController {
   private terminalManager: TerminalManager;
   private cbs: ControllerCallbacks;
   private sessionModes: acp.SessionModeState | null = null;
+  dropped = false;
+  private pendingAcp: AcpProcess | null = null;
 
   constructor(
     sessionId: string,
@@ -159,6 +161,7 @@ export class SessionController {
   }
 
   private transition(operation: string, next?: SessionStatus): { ok: true } | { ok: false; status: number; message: string } {
+    if (this.dropped) return { ok: true };
     const result = nextStatus(this.status, operation);
     if (!result.ok) return { ok: false, status: result.error.status, message: result.error.message };
     const prev = this.status;
@@ -171,12 +174,14 @@ export class SessionController {
   }
 
   private emitStateChange(previous: SessionStatus, next: SessionStatus) {
+    if (this.dropped) return;
     this.eventBus.emit(this.sessionId, this.processGeneration, "state_change", { previous, next, activeOperation: this.activeOperation?.name });
   }
 
   /** Idempotent attach for an existing session (load or resume). */
   async attach(factory: (cwd: string, generation: number, cbs: any) => Promise<AcpProcess>): Promise<void> {
     return this.start("attach", factory, async (acp) => {
+      acp.setSessionId(this.sessionId);
       const supportsResume = !!acp.capabilities?.agentCapabilities?.sessionCapabilities?.resume;
       if (supportsResume) {
         await acp.resumeSession(this.sessionId, this.cwd);
@@ -206,6 +211,7 @@ export class SessionController {
     factory: (cwd: string, generation: number, cbs: any) => Promise<AcpProcess>,
     init: (acp: AcpProcess) => Promise<void>,
   ): Promise<void> {
+    if (this.dropped) throw Object.assign(new Error("session dropped"), { status: 410 });
     if (this.acp && !this.acp.exited && (this.status === "idle" || this.status === "running" || this.status === "waiting_for_permission")) {
       return;
     }
@@ -221,6 +227,7 @@ export class SessionController {
       // release its resources, and kill it before starting the replacement.
       const oldAcp = this.acp;
       this.acp = null;
+      this.pendingAcp = null;
       this.processGeneration += 1;
       const gen = this.processGeneration;
       const previousGeneration = gen - 1;
@@ -275,11 +282,27 @@ export class SessionController {
           throw new Error("process generation changed during start");
         }
 
+        this.pendingAcp = acp;
+        if (this.dropped) {
+          acp.kill();
+          this.pendingAcp = null;
+          throw new Error("session dropped");
+        }
+
         this.acp = acp;
+        this.pendingAcp = null;
         await init(acp);
+
+        if (this.dropped) {
+          acp.kill();
+          this.acp = null;
+          throw new Error("session dropped");
+        }
+
         this.transition("loadComplete");
         this.metadata.updatedAt = Date.now();
       } catch (err) {
+        this.pendingAcp = null;
         acp?.kill();
         if (gen === this.processGeneration && this.status === "loading") {
           this.transition("fail");
@@ -417,6 +440,35 @@ export class SessionController {
     return ok;
   }
 
+  async drop(): Promise<boolean> {
+    if (this.dropped) return false;
+    this.eventBus.emit(this.sessionId, this.processGeneration, "session_dropped", { sessionId: this.sessionId });
+    this.dropped = true;
+    this.activeOperation = undefined;
+    this.activePrompt = null;
+    this.status = "closed";
+
+    let deleted = false;
+    const acp = this.acp;
+    const pending = this.pendingAcp;
+    if (pending && !pending.exited) pending.kill();
+    this.pendingAcp = null;
+    if (acp && !acp.exited) {
+      if (acp.capabilities?.agentCapabilities?.sessionCapabilities?.delete) {
+        try {
+          await acp.deleteSession();
+          deleted = true;
+        } catch {
+          deleted = false;
+        }
+      }
+      acp.kill();
+    }
+    this.acp = null;
+    this.terminalManager.releaseSession(this.sessionId);
+    return deleted;
+  }
+
   close(): void {
     if (this.status === "closed") return;
     this.transition("close");
@@ -431,6 +483,7 @@ export class SessionController {
   // ---- handlers ----------------------------------------------------------------
 
   private handleSessionUpdate(update: acp.SessionNotification) {
+    if (this.dropped) return;
     // Reflect running state when the agent sends non-final updates.
     if (this.status === "idle" && this.activeOperation?.kind === "prompt") {
       this.transition("prompt");
@@ -440,10 +493,12 @@ export class SessionController {
   }
 
   private handleAgentLog(channel: string, message: string, level: string) {
+    if (this.dropped) return;
     this.eventBus.emit(this.sessionId, this.processGeneration, "agent_log", { channel, message, level });
   }
 
   private handlePermissionRequest(requestId: string, toolCall: unknown, options: PermissionRequest["options"]) {
+    if (this.dropped) return;
     if (this.status === "running") {
       this.transition("permission");
     }
@@ -454,6 +509,7 @@ export class SessionController {
   }
 
   private handlePermissionResolved(requestId: string) {
+    if (this.dropped) return;
     this.pendingPermissions.delete(requestId);
     this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", { requestId });
     if (this.pendingPermissions.size === 0 && this.status === "waiting_for_permission") {
@@ -462,15 +518,17 @@ export class SessionController {
   }
 
   private handleTerminalOutput(terminalId: string, data: string) {
+    if (this.dropped) return;
     this.eventBus.emit(this.sessionId, this.processGeneration, "terminal_output", { terminalId, data });
   }
 
   private handleTerminalExit(terminalId: string, exitCode: number | null, signal: string | null) {
+    if (this.dropped) return;
     this.eventBus.emit(this.sessionId, this.processGeneration, "terminal_exit", { terminalId, exitCode, signal });
   }
 
   private handleAcpExit(code: number | null) {
-    if (this.status === "closed") return;
+    if (this.dropped || this.status === "closed") return;
     this.transition("fail");
     this.eventBus.emit(this.sessionId, this.processGeneration, "process_status", { status: "exited", code });
     this.cbs.onExit(this, code);
