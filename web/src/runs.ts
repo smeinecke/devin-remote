@@ -52,7 +52,11 @@ function makeActivity(tool: ToolCallState, session: SessionState): AgentActivity
       startedAt: subagent.startedAt ?? tool.startedAt,
       completedAt: subagent.completedAt ?? tool.finishedAt ?? undefined,
       details: { subagent, rawInput: tool.rawInput, rawOutput: tool.rawOutput },
-      autoExpand: subagent.status === "running" || subagent.status === "starting",
+      autoExpand:
+        subagent.status === "running" ||
+        subagent.status === "starting" ||
+        subagent.status === "waiting_for_permission" ||
+        subagent.status === "failed",
       children: [],
       subagentId: tool.id,
       meta,
@@ -93,7 +97,11 @@ function buildSubagentActivity(
     startedAt,
     completedAt,
     details: root?.details ?? (s ? { subagent: s } : undefined),
-    autoExpand: status === "in_progress" || status === "pending",
+    autoExpand:
+      status === "in_progress" ||
+      status === "pending" ||
+      status === "failed" ||
+      s?.status === "waiting_for_permission",
     children: [...(root?.children ?? []), ...children],
     subagentId: id,
   };

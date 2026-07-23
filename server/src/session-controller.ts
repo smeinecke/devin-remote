@@ -422,14 +422,26 @@ export class SessionController {
     const req = this.pendingPermissions.get(requestId);
     if (!req) return false;
     const ok = this.acp?.resolvePermission(requestId, optionId) ?? false;
-    if (ok) {
-      this.pendingPermissions.delete(requestId);
-      this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", { requestId, optionId });
-      if (this.pendingPermissions.size === 0 && this.status === "waiting_for_permission") {
-        this.transition("resolve");
+    if (!ok) return false;
+
+    this.pendingPermissions.delete(requestId);
+    this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", {
+      requestId,
+      optionId,
+      subagentId: req.subagentId,
+    });
+
+    if (req.subagentId) {
+      const updated = this.subagentRegistry.resolvePermission(req.subagentId, requestId);
+      if (updated) {
+        this.eventBus.emit(this.sessionId, this.processGeneration, updated.type, updated);
       }
     }
-    return ok;
+
+    if (this.pendingPermissions.size === 0 && this.status === "waiting_for_permission") {
+      this.transition("resolve");
+    }
+    return true;
   }
 
   async setConfig(configId: string, value: string): Promise<unknown> {
@@ -497,9 +509,9 @@ export class SessionController {
       this.transition("prompt");
     }
     const raw = update as unknown as Record<string, unknown>;
-    const subagent = this.subagentRegistry.processUpdate(raw);
-    if (subagent) {
-      this.eventBus.emit(this.sessionId, this.processGeneration, "subagent_update", subagent);
+    const subagentEvent = this.subagentRegistry.processUpdate(raw);
+    if (subagentEvent) {
+      this.eventBus.emit(this.sessionId, this.processGeneration, subagentEvent.type, subagentEvent);
     }
     this.eventBus.emit(this.sessionId, this.processGeneration, "session_update", update);
     this.metadata.updatedAt = Date.now();
@@ -520,8 +532,8 @@ export class SessionController {
     this.pendingPermissions.set(requestId, req);
     this.cbs.onPermissionOwner(requestId, this);
     if (parentAgentId) {
-      const subagent = this.subagentRegistry.addPendingPermission(parentAgentId, requestId);
-      if (subagent) this.eventBus.emit(this.sessionId, this.processGeneration, "subagent_update", subagent);
+      const subagentEvent = this.subagentRegistry.addPendingPermission(parentAgentId, requestId);
+      if (subagentEvent) this.eventBus.emit(this.sessionId, this.processGeneration, subagentEvent.type, subagentEvent);
     }
     this.eventBus.emit(this.sessionId, this.processGeneration, "permission_request", req);
   }
@@ -529,12 +541,16 @@ export class SessionController {
   private handlePermissionResolved(requestId: string) {
     if (this.dropped) return;
     const req = this.pendingPermissions.get(requestId);
+    if (!req) return;
     this.pendingPermissions.delete(requestId);
-    if (req?.subagentId) {
-      const subagent = this.subagentRegistry.resolvePermission(req.subagentId, requestId);
-      if (subagent) this.eventBus.emit(this.sessionId, this.processGeneration, "subagent_update", subagent);
+    if (req.subagentId) {
+      const subagentEvent = this.subagentRegistry.resolvePermission(req.subagentId, requestId);
+      if (subagentEvent) this.eventBus.emit(this.sessionId, this.processGeneration, subagentEvent.type, subagentEvent);
     }
-    this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", { requestId });
+    this.eventBus.emit(this.sessionId, this.processGeneration, "permission_resolved", {
+      requestId,
+      subagentId: req.subagentId,
+    });
     if (this.pendingPermissions.size === 0 && this.status === "waiting_for_permission") {
       this.transition("resolve");
     }
@@ -552,6 +568,10 @@ export class SessionController {
 
   private handleAcpExit(code: number | null) {
     if (this.dropped || this.status === "closed") return;
+    const completedAt = Date.now();
+    for (const ev of this.subagentRegistry.onProcessExit(completedAt)) {
+      this.eventBus.emit(this.sessionId, this.processGeneration, ev.type, ev);
+    }
     this.transition("fail");
     this.eventBus.emit(this.sessionId, this.processGeneration, "process_status", { status: "exited", code });
     this.cbs.onExit(this, code);

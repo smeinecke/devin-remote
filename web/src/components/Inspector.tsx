@@ -1,9 +1,11 @@
-import { lazy, Suspense, useMemo } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { setUi, useStore } from "../state";
-import type { AgentActivity } from "../store-types";
+import type { AgentActivity, SubagentDescriptor } from "../store-types";
 import {
   ActivityIcon,
+  BotIcon,
+  ChevronRightIcon,
   FileCodeIcon,
   FilesIcon,
   LayoutListIcon,
@@ -38,37 +40,158 @@ function statusDot(status: AgentActivity["status"]) {
   );
 }
 
+function formatDuration(ms: number): string | null {
+  if (ms < 400) return null;
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms / 1000)}s`;
+}
+
+function subagentStatusLabel(status: SubagentDescriptor["status"]): string {
+  switch (status) {
+    case "waiting_for_permission":
+      return "Waiting for approval";
+    case "running":
+      return "Running";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "starting":
+      return "Starting";
+    default:
+      return "Pending";
+  }
+}
+
+function activityStatusLabel(activity: AgentActivity): string {
+  const subagent = (activity.details as { subagent?: SubagentDescriptor } | undefined)?.subagent;
+  if (subagent) return subagentStatusLabel(subagent.status);
+  if (activity.status === "in_progress") return "Running";
+  return activity.status.replace(/_/g, " ");
+}
+
+const COUNTABLE_TYPES: Record<string, string> = {
+  file_read: "file",
+  file_edit: "file edit",
+  command: "command",
+  test: "test",
+  search: "search",
+  permission: "permission",
+  subagent: "subagent",
+  terminal: "terminal",
+};
+
+function pluralize(n: number, label: string): string {
+  return `${n} ${label}${n === 1 ? "" : label === "search" ? "es" : "s"}`;
+}
+
+function subagentSummary(activity: AgentActivity): string | null {
+  const subagent = (activity.details as { subagent?: SubagentDescriptor } | undefined)?.subagent;
+  if (!subagent) return null;
+
+  if (subagent.status === "failed" && subagent.error) {
+    return subagent.error;
+  }
+  if (subagent.status === "cancelled") {
+    return "Cancelled";
+  }
+
+  const counts: Record<string, number> = {};
+  for (const child of activity.children ?? []) {
+    const label = COUNTABLE_TYPES[child.type] ?? "tool";
+    counts[label] = (counts[label] ?? 0) + 1;
+  }
+
+  const parts: string[] = [];
+  for (const [label, count] of Object.entries(counts)) {
+    parts.push(pluralize(count, label));
+  }
+
+  if (subagent.completedAt && subagent.startedAt) {
+    const duration = formatDuration(subagent.completedAt - subagent.startedAt);
+    if (duration) parts.push(duration);
+  }
+
+  if (parts.length > 0) return parts.join(" · ");
+  if (subagent.result) return subagent.result.length > 120 ? `${subagent.result.slice(0, 120)}…` : subagent.result;
+  return null;
+}
+
 function ActivityItem({ activity, depth = 0 }: { activity: AgentActivity; depth?: number }) {
-  const hasChildren = activity.children && activity.children.length > 0;
-  const details = activity.details as { subagent?: { result?: string | null; prompt?: string | null } } | undefined;
+  const [expanded, setExpanded] = useState(activity.autoExpand ?? false);
+  const isSubagent = activity.type === "subagent";
+  const hasChildren = (activity.children?.length ?? 0) > 0;
+  const subagent = (activity.details as { subagent?: SubagentDescriptor } | undefined)?.subagent;
+  const summary = subagentSummary(activity);
+  const canExpand = hasChildren || !!subagent?.prompt || !!subagent?.result || !!subagent?.error || activity.meta?.command || activity.meta?.path;
+
   return (
     <div
       key={activity.id}
       className={cn(
         "rounded-md border border-border bg-muted/40 p-2.5 text-xs",
         activity.status === "in_progress" && "border-primary/30 bg-primary/5",
-        depth > 0 && "ml-4",
+        activity.status === "failed" && "border-red-500/30",
+        depth > 0 && "ml-2 sm:ml-4",
       )}
     >
-      <div className="flex items-center gap-2 font-medium">
-        <span className={statusDot(activity.status)} />
-        <span className="capitalize">{activity.type.replace(/_/g, " ")}</span>
-        {activity.subagentId && <span className="tnum font-mono text-[10px] text-muted-foreground">{activity.subagentId.slice(0, 8)}</span>}
-        <span className="ml-auto text-muted-foreground">{activity.title}</span>
-      </div>
-      {details?.subagent?.prompt && (
-        <div className="mt-1 truncate text-muted-foreground" title={details.subagent.prompt}>
-          {details.subagent.prompt}
+      <button
+        type="button"
+        disabled={!canExpand}
+        onClick={() => setExpanded((e) => !e)}
+        className={cn(
+          "flex w-full min-w-0 items-center gap-2 text-left",
+          canExpand && "cursor-pointer",
+        )}
+      >
+        {isSubagent ? (
+          <BotIcon className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <span className={statusDot(activity.status)} />
+        )}
+        <span className="min-w-0 flex-1 truncate font-medium">{activity.title}</span>
+        <span
+          className={cn(
+            "shrink-0 text-[11px] font-medium",
+            subagent?.status === "failed" && "text-red-500",
+            subagent?.status === "completed" && "text-emerald-500",
+            subagent?.status === "waiting_for_permission" && "text-primary",
+            !subagent && "text-muted-foreground",
+          )}
+        >
+          {activityStatusLabel(activity)}
+        </span>
+        {canExpand && (
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-150",
+              expanded && "rotate-90",
+            )}
+          />
+        )}
+      </button>
+      {summary && (
+        <div className={cn("mt-1 truncate text-muted-foreground", subagent?.status === "failed" && "text-red-500/80")}>
+          {summary}
         </div>
       )}
-      {details?.subagent?.result && (
-        <div className="mt-1 line-clamp-3 text-muted-foreground">{details.subagent.result}</div>
+      {expanded && subagent?.prompt && (
+        <div className="mt-2 rounded-md bg-muted/60 p-2 font-mono text-[11px] text-muted-foreground">
+          {subagent.prompt}
+        </div>
       )}
-      {activity.meta?.path && <div className="mt-1 truncate text-muted-foreground">{activity.meta.path}</div>}
-      {activity.meta?.command && (
+      {expanded && activity.meta?.path && (
+        <div className="mt-1 truncate text-muted-foreground">{activity.meta.path}</div>
+      )}
+      {expanded && activity.meta?.command && (
         <div className="mt-1 truncate font-mono text-muted-foreground">{activity.meta.command}</div>
       )}
-      {hasChildren && (
+      {expanded && subagent?.result && subagent.status !== "failed" && (
+        <div className="mt-2 line-clamp-6 text-muted-foreground">{subagent.result}</div>
+      )}
+      {expanded && hasChildren && (
         <div className="mt-2 flex flex-col gap-2">
           {activity.children!.map((child: AgentActivity) => (
             <ActivityItem key={child.id} activity={child} depth={depth + 1} />
@@ -78,6 +201,8 @@ function ActivityItem({ activity, depth = 0 }: { activity: AgentActivity; depth?
     </div>
   );
 }
+
+export { ActivityItem };
 
 function ActivityTab() {
   const { activeSessionId, sessions } = useStore();

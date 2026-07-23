@@ -12,6 +12,7 @@ class FakeAcpProcess {
   capabilities: any = null;
   promptResolve: ((v: any) => void) | null = null;
   promptReject: ((e: any) => void) | null = null;
+  resolvePermissionResult = true;
 
   constructor(sessionId: string, cbs: any) {
     this.sessionId = sessionId;
@@ -45,6 +46,10 @@ class FakeAcpProcess {
 
   kill() {
     this.killed = true;
+  }
+
+  resolvePermission(_requestId: string, _optionId: string | null) {
+    return this.resolvePermissionResult;
   }
 
   async terminate() {
@@ -288,5 +293,119 @@ describe("SessionController", () => {
     const dropped = emitted.find((e) => e.type === "event" && e.eventType === "session_dropped");
     assert.ok(dropped);
     assert.strictEqual(dropped.payload.sessionId, c.sessionId);
+  });
+
+  it("resolves a permission and updates the owning subagent", async () => {
+    const bus = new EventBus();
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, bus, {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "running";
+
+    // Simulate a subagent starting and then requesting permission.
+    processes[0].cbs.onSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "sub-a",
+      status: "in_progress",
+      _meta: {
+        "cognition.ai/subagent_started": {
+          agentId: "sub-a",
+          title: "Run tests",
+          task: "npm test",
+          profile: "Explore",
+          depth: 1,
+          isBackground: true,
+        },
+      },
+    });
+
+    processes[0].cbs.onPermissionRequest("perm-1", {
+      _meta: { "cognition.ai/subagent_context": { parentAgentId: "sub-a" } },
+      title: "Run command",
+      rawInput: { command: "npm test" },
+    }, [{ optionId: "yes", name: "Allow", kind: "allow" }]);
+
+    const emitted: any[] = [];
+    bus.subscribe((_sid, env) => emitted.push(env));
+
+    const ok = c.resolvePermission("perm-1", "yes");
+    assert.strictEqual(ok, true);
+
+    const resolved = emitted.find((e) => e.type === "event" && e.eventType === "permission_resolved");
+    assert.ok(resolved);
+    assert.strictEqual(resolved.payload.subagentId, "sub-a");
+
+    const subagentUpdated = emitted.find((e) => e.type === "event" && e.eventType === "subagent_updated");
+    assert.ok(subagentUpdated);
+    assert.strictEqual(subagentUpdated.payload.subagentId, "sub-a");
+    assert.deepStrictEqual(subagentUpdated.payload.patch.pendingPermissions, []);
+  });
+
+  it("does not mutate state when ACP resolvePermission fails", async () => {
+    const bus = new EventBus();
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, bus, {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "running";
+
+    const emitted: any[] = [];
+    bus.subscribe((_sid, env) => emitted.push(env));
+
+    processes[0].cbs.onPermissionRequest("perm-1", { title: "Run command" }, [
+      { optionId: "yes", name: "Allow", kind: "allow" },
+    ]);
+    processes[0].resolvePermissionResult = false;
+
+    const ok = c.resolvePermission("perm-1", "yes");
+    assert.strictEqual(ok, false);
+    assert.strictEqual(c.pendingPermissions.has("perm-1"), true);
+    assert.ok(emitted.some((e) => e.type === "event" && e.eventType === "permission_request"));
+    assert.ok(!emitted.some((e) => e.type === "event" && e.eventType === "permission_resolved"));
+    assert.ok(!emitted.some((e) => e.type === "event" && e.eventType.startsWith("subagent_")));
+  });
+
+  it("marks live subagents as failed on ACP exit", async () => {
+    const bus = new EventBus();
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, bus, {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+
+    processes[0].cbs.onSessionUpdate({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "sub-a",
+      status: "in_progress",
+      _meta: {
+        "cognition.ai/subagent_started": {
+          agentId: "sub-a",
+          title: "Run tests",
+          task: "npm test",
+          profile: "Explore",
+          depth: 1,
+          isBackground: true,
+        },
+      },
+    });
+
+    const emitted: any[] = [];
+    bus.subscribe((_sid, env) => emitted.push(env));
+
+    processes[0].cbs.onExit(1);
+
+    const failed = emitted.find((e) => e.type === "event" && e.eventType === "subagent_failed");
+    assert.ok(failed);
+    assert.strictEqual(failed.payload.subagentId, "sub-a");
+    assert.ok(failed.payload.completedAt);
   });
 });

@@ -7,7 +7,8 @@ npm install
 npm run dev          # server :7781 + vite :5173
 npm run build        # dist/web + dist/server
 npm run typecheck    # tsc both projects
-npm run test         # unit tests (Node test runner + tsx)
+npm run test         # all unit tests (server tsx + web vitest)
+npm run test:server  # server unit tests (Node test runner + tsx)
 npm run test:web     # web unit tests (vitest + happy-dom)
 npm run smoke        # e2e against real devin CLI (costs tokens)
 npm start            # production server

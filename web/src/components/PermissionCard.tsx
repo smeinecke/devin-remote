@@ -2,8 +2,8 @@
 // keyboard shortcuts (1/2/3…) mapped to the agent's options.
 
 import { memo, useEffect, useRef, useState, type FC } from "react";
-import { ShieldAlertIcon } from "lucide-react";
-import type { PendingPermission } from "../state";
+import { BotIcon, ShieldAlertIcon } from "lucide-react";
+import type { PendingPermission, SessionState, SubagentDescriptor } from "../state";
 import { resolvePermission, useStore } from "../state";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -22,17 +22,50 @@ function isAllow(kind: string): boolean {
   return /allow|accept|approve|proceed|always|once/i.test(kind) && !/reject|deny/i.test(kind);
 }
 
+function subagentAncestry(session: SessionState | null | undefined, subagentId: string): string[] {
+  const out: string[] = [];
+  let current: SubagentDescriptor | undefined = session?.subagents[subagentId];
+  const seen = new Set<string>();
+  while (current && !seen.has(current.id)) {
+    out.unshift(current.title ?? `Subagent ${current.id.slice(0, 8)}`);
+    seen.add(current.id);
+    current = current.parentSubagentId ? session?.subagents[current.parentSubagentId] : undefined;
+  }
+  return out;
+}
+
 const PermissionCard: FC<{ perm: PendingPermission; busy: boolean; onChoose: (id: string | null) => void }> = ({
   perm,
   busy,
   onChoose,
 }) => {
+  const session = useStore((s) => (s.activeSessionId ? s.sessions[s.activeSessionId] : null));
   const detail = summarize(perm.toolCall?.rawInput);
+  const subagent = perm.subagentId ? session?.subagents[perm.subagentId] : undefined;
+  const ancestry = subagent ? subagentAncestry(session, perm.subagentId!) : null;
+  const title = ancestry ? ancestry.join(" › ") : subagent?.title ?? null;
+  const toolTitle = String(perm.toolCall?.title ?? perm.toolCall?.kind ?? "tool call");
+
   return (
-    <div className="rounded-xl border border-border border-l-2 border-l-primary bg-card p-3 shadow-sm">
+    <div
+      className="rounded-xl border border-border border-l-2 border-l-primary bg-card p-3 shadow-sm"
+      aria-label={
+        subagent ? `Subagent ${title} requests permission: ${toolTitle}` : `Permission requested: ${toolTitle}`
+      }
+    >
       <div className="flex items-center gap-2 text-[13px] font-medium">
-        <ShieldAlertIcon className="size-4 text-primary" />
-        Permission requested — {String(perm.toolCall?.title ?? perm.toolCall?.kind ?? "tool call")}
+        {subagent ? <BotIcon className="size-4 text-primary" /> : <ShieldAlertIcon className="size-4 text-primary" />}
+        {subagent ? (
+          <>
+            <span className="min-w-0 flex-1 truncate">{title ?? `Subagent ${perm.subagentId!.slice(0, 8)}`}</span>
+            <span className="shrink-0 text-muted-foreground font-normal">requests permission</span>
+          </>
+        ) : (
+          <>
+            <span className="truncate">Permission requested</span>
+            <span className="truncate text-muted-foreground font-normal">— {toolTitle}</span>
+          </>
+        )}
       </div>
       {detail && (
         <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/40 p-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground">

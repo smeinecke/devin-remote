@@ -36,6 +36,7 @@ import type {
   AvailableCommandsUpdate,
   SessionInfoUpdate,
   PermissionRequestPayload,
+  NormalizedSubagentEvent,
 } from "./types";
 
 export * from "./store-types";
@@ -661,10 +662,10 @@ export async function setSessionConfig(sessionId: string, configId: "mode" | "mo
 export async function resolvePermission(requestId: string, optionId: string | null): Promise<void> {
   try {
     await api.resolvePermission(requestId, optionId);
+    removePermission(requestId);
   } catch (err) {
     showNotice(err instanceof Error ? err.message : "permission resolution failed");
   }
-  removePermission(requestId);
 }
 
 function removePermission(requestId: string): void {
@@ -759,6 +760,14 @@ export function dispatchEvent(ev: WsServerEvent): void {
     });
     updateSession(s.sessionId, (d) => {
       const generationChanged = d.processGeneration !== s.processGeneration;
+      const terminalStatuses = new Set(["completed", "failed", "cancelled"]);
+      const historical: Record<string, SubagentDescriptor> = {};
+      const previousSubagents = d.subagents ?? {};
+      if (generationChanged) {
+        for (const [id, sub] of Object.entries(previousSubagents)) {
+          if (terminalStatuses.has(sub.status)) historical[id] = sub;
+        }
+      }
       d.processGeneration = s.processGeneration;
       if (replacing || generationChanged) {
         d.lastSequence = 0;
@@ -778,7 +787,15 @@ export function dispatchEvent(ev: WsServerEvent): void {
       if (snapshotState.status) d.status = snapshotState.status as SessionState["status"];
       if (typeof snapshotState.running === "boolean") d.running = snapshotState.running;
       if (snapshotState.pendingPermissions) d.permissions = snapshotState.pendingPermissions as PendingPermission[];
-      if (snapshotState.subagents) d.subagents = snapshotState.subagents as Record<string, SubagentDescriptor>;
+      if (snapshotState.subagents) {
+        d.subagents = { ...(d.subagents ?? {}), ...(snapshotState.subagents as Record<string, SubagentDescriptor>) };
+      }
+      if (generationChanged) {
+        d.subagents = d.subagents ?? {};
+        for (const [id, sub] of Object.entries(historical)) {
+          if (!d.subagents[id]) d.subagents[id] = sub;
+        }
+      }
       d.synced = true;
     });
     for (const e of s.events) applyEventEnvelope(e as ServerEventEnvelope);
@@ -801,12 +818,19 @@ function handleGenerationChanged(sessionId: string, previousGeneration: number, 
     updatedAt: null,
   });
   updateSession(sessionId, (d) => {
+    const previousSubagents = d.subagents ?? {};
+    const preserved: Record<string, SubagentDescriptor> = {};
+    for (const [id, s] of Object.entries(previousSubagents)) {
+      if (s.status === "completed" || s.status === "failed" || s.status === "cancelled") {
+        preserved[id] = s;
+      }
+    }
     d.processGeneration = processGeneration;
     d.lastSequence = 0;
     d.running = false;
     d.activePromptRequest = null;
     d.permissions = [];
-    d.subagents = {};
+    d.subagents = preserved;
     d.openAgentMsg = null;
     d.openThoughtMsg = null;
     d.openUserMsg = null;
@@ -827,6 +851,29 @@ function handleGenerationChanged(sessionId: string, previousGeneration: number, 
   } else {
     subscribeSession(sessionId, processGeneration, 0);
   }
+}
+
+function applySubagentDescriptor(d: SessionState, subagent: SubagentDescriptor): void {
+  d.subagents = { ...d.subagents, [subagent.id]: subagent };
+  const nextToolCalls = { ...d.toolCalls };
+  if (nextToolCalls[subagent.id]) {
+    nextToolCalls[subagent.id] = {
+      ...nextToolCalls[subagent.id],
+      title: subagent.title ?? nextToolCalls[subagent.id].title,
+      kind:
+        nextToolCalls[subagent.id].kind === "other" || !nextToolCalls[subagent.id].kind
+          ? "subagent"
+          : nextToolCalls[subagent.id].kind,
+      subagentId: subagent.id,
+    };
+  }
+  for (const tcId of subagent.toolCallIds) {
+    const tc = nextToolCalls[tcId];
+    if (tc && tc.subagentId !== subagent.id) {
+      nextToolCalls[tcId] = { ...tc, subagentId: subagent.id };
+    }
+  }
+  d.toolCalls = nextToolCalls;
 }
 
 function applyEventEnvelope(ev: ServerEventEnvelope): void {
@@ -875,6 +922,7 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       });
       const perm: PendingPermission = {
         requestId: p.requestId,
+        subagentId: p.subagentId,
         toolCall: p.toolCall,
         options: p.options,
       };
@@ -916,26 +964,113 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       }
       break;
     }
+    case "subagent_started":
     case "subagent_update": {
       const p = payload as SubagentDescriptor;
       updateSession(sessionId, (d) => {
-        d.subagents = { ...d.subagents, [p.id]: p };
-        const nextToolCalls = { ...d.toolCalls };
-        if (nextToolCalls[p.id]) {
-          nextToolCalls[p.id] = {
-            ...nextToolCalls[p.id],
-            title: p.title ?? nextToolCalls[p.id].title,
-            kind: nextToolCalls[p.id].kind === "other" || !nextToolCalls[p.id].kind ? "subagent" : nextToolCalls[p.id].kind,
-            subagentId: p.id,
-          };
-        }
-        for (const tcId of p.toolCallIds) {
-          const tc = nextToolCalls[tcId];
-          if (tc && tc.subagentId !== p.id) {
-            nextToolCalls[tcId] = { ...tc, subagentId: p.id };
-          }
-        }
-        d.toolCalls = nextToolCalls;
+        applySubagentDescriptor(d, p);
+      });
+      break;
+    }
+    case "subagent_updated": {
+      const p = payload as { subagentId: string; patch: Partial<SubagentDescriptor> };
+      updateSession(sessionId, (d) => {
+        const existing = d.subagents[p.subagentId];
+        const next: SubagentDescriptor = existing
+          ? { ...existing, ...p.patch }
+          : ({ id: p.subagentId, sessionId, processGeneration, ...p.patch } as SubagentDescriptor);
+        applySubagentDescriptor(d, next);
+      });
+      break;
+    }
+    case "subagent_completed": {
+      const p = payload as { subagentId: string; result: string | null; completedAt: number };
+      updateSession(sessionId, (d) => {
+        const existing = d.subagents[p.subagentId];
+        if (existing && existing.completedAt && existing.status === "completed") return;
+        const next: SubagentDescriptor = {
+          ...(existing ?? {
+            id: p.subagentId,
+            sessionId,
+            processGeneration,
+            parentSubagentId: null,
+            parentToolCallId: null,
+            title: `Subagent ${p.subagentId.slice(0, 8)}`,
+            prompt: null,
+            status: "completed",
+            startedAt: null,
+            profile: null,
+            depth: 1,
+            isBackground: true,
+            toolCallIds: [],
+            pendingPermissions: [],
+          }),
+          status: "completed",
+          result: existing?.result ?? p.result,
+          completedAt: existing?.completedAt ?? p.completedAt,
+        };
+        applySubagentDescriptor(d, next);
+      });
+      break;
+    }
+    case "subagent_failed": {
+      const p = payload as { subagentId: string; error: string; completedAt: number; status?: "failed" | "cancelled" };
+      updateSession(sessionId, (d) => {
+        const existing = d.subagents[p.subagentId];
+        if (existing && existing.completedAt && (existing.status === "failed" || existing.status === "cancelled")) return;
+        const lower = p.error.toLowerCase();
+        const status = p.status ?? (lower.includes("cancel") || lower.includes("cancelled") ? "cancelled" : "failed");
+        const next: SubagentDescriptor = {
+          ...(existing ?? {
+            id: p.subagentId,
+            sessionId,
+            processGeneration,
+            parentSubagentId: null,
+            parentToolCallId: null,
+            title: `Subagent ${p.subagentId.slice(0, 8)}`,
+            prompt: null,
+            status,
+            startedAt: null,
+            profile: null,
+            depth: 1,
+            isBackground: true,
+            toolCallIds: [],
+            pendingPermissions: [],
+          }),
+          status,
+          error: p.error,
+          completedAt: existing?.completedAt ?? p.completedAt,
+        };
+        applySubagentDescriptor(d, next);
+      });
+      break;
+    }
+    case "subagent_cancelled": {
+      const p = payload as { subagentId: string; completedAt: number };
+      updateSession(sessionId, (d) => {
+        const existing = d.subagents[p.subagentId];
+        if (existing && existing.completedAt && existing.status === "cancelled") return;
+        const next: SubagentDescriptor = {
+          ...(existing ?? {
+            id: p.subagentId,
+            sessionId,
+            processGeneration,
+            parentSubagentId: null,
+            parentToolCallId: null,
+            title: `Subagent ${p.subagentId.slice(0, 8)}`,
+            prompt: null,
+            status: "cancelled",
+            startedAt: null,
+            profile: null,
+            depth: 1,
+            isBackground: true,
+            toolCallIds: [],
+            pendingPermissions: [],
+          }),
+          status: "cancelled",
+          completedAt: existing?.completedAt ?? p.completedAt,
+        };
+        applySubagentDescriptor(d, next);
       });
       break;
     }

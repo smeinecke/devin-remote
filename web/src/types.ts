@@ -241,9 +241,50 @@ export interface PermissionOption {
 export interface PermissionRequestPayload {
   requestId: string;
   sessionId: string;
+  /** Set when this permission was requested on behalf of a subagent. */
+  subagentId?: string;
   toolCall: { title?: string; kind?: string; rawInput?: unknown; [key: string]: unknown };
   options: PermissionOption[];
 }
+
+export type SubagentStartedEvent = {
+  type: "subagent_started";
+  subagent: SubagentDescriptor;
+};
+
+export type SubagentUpdatedEvent = {
+  type: "subagent_updated";
+  subagentId: string;
+  patch: Partial<SubagentDescriptor>;
+};
+
+export type SubagentCompletedEvent = {
+  type: "subagent_completed";
+  subagentId: string;
+  result: string | null;
+  completedAt: number;
+};
+
+export type SubagentFailedEvent = {
+  type: "subagent_failed";
+  subagentId: string;
+  error: string;
+  completedAt: number;
+  status?: "failed" | "cancelled";
+};
+
+export type SubagentCancelledEvent = {
+  type: "subagent_cancelled";
+  subagentId: string;
+  completedAt: number;
+};
+
+export type NormalizedSubagentEvent =
+  | SubagentStartedEvent
+  | SubagentUpdatedEvent
+  | SubagentCompletedEvent
+  | SubagentFailedEvent
+  | SubagentCancelledEvent;
 
 export interface PromptDoneResult {
   stopReason: string;

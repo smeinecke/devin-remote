@@ -20,6 +20,11 @@ export type EventType =
   | "process_status"
   | "prompt_done"
   | "subagent_update"
+  | "subagent_started"
+  | "subagent_updated"
+  | "subagent_completed"
+  | "subagent_failed"
+  | "subagent_cancelled"
   | "generation_changed"
   | "session_dropped";
 

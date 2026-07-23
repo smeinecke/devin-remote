@@ -93,6 +93,8 @@ export type TimelineItem = { kind: "message" | "tool" | "run"; id: string };
 
 export interface PendingPermission {
   requestId: string;
+  /** Set when this permission was requested on behalf of a subagent. */
+  subagentId?: string;
   toolCall: { title?: string; kind?: string; rawInput?: unknown; [key: string]: unknown };
   options: Array<{ optionId: string; name: string; kind: string }>;
 }
