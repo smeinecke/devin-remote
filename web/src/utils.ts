@@ -1,5 +1,7 @@
 // Small shared helpers — time, numbers, fuzzy match, line diff.
 
+import type { DirectoryValidationResponse } from "./types";
+
 /** Generate a UUID v4, falling back for non-secure (`http://`) contexts. */
 export function randomUUID(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -578,4 +580,70 @@ export function mentionToUri(mention: string, cwd: string): string {
   if (mention.startsWith("~")) return `file://${mention}`;
   const abs = mention.startsWith("/") ? mention : `${cwd.replace(/[/\\]+$/, "")}/${mention}`;
   return `file://${abs}`;
+}
+
+export interface WorkspaceModeCheck {
+  allowed: boolean;
+  reason: string | null;
+  requiresWritable: boolean;
+}
+
+export function workspaceMeetsModeRequirements(
+  validation: DirectoryValidationResponse | null,
+  mode?: string | null,
+  isolate = false,
+): WorkspaceModeCheck {
+  if (!validation?.allowed || !validation.exists || !validation.isDirectory || !validation.readable) {
+    return {
+      allowed: false,
+      requiresWritable: false,
+      reason: validation?.errorCode ? validationErrorMessage(validation.errorCode) : "Invalid workspace directory.",
+    };
+  }
+
+  if (isolate) {
+    if (!validation.writable) {
+      return {
+        allowed: false,
+        requiresWritable: true,
+        reason: "Worktree isolation requires a writable workspace.",
+      };
+    }
+    return { allowed: true, requiresWritable: true, reason: null };
+  }
+
+  if (mode === "ask") {
+    return { allowed: true, requiresWritable: false, reason: null };
+  }
+
+  if (!validation.writable) {
+    return {
+      allowed: false,
+      requiresWritable: true,
+      reason: mode ? `Mode "${mode}" requires a writable workspace.` : "A writable workspace is required.",
+    };
+  }
+
+  return { allowed: true, requiresWritable: true, reason: null };
+}
+
+export function validationErrorMessage(code: string): string {
+  switch (code) {
+    case "INVALID_PATH":
+      return "Invalid path.";
+    case "PATH_NOT_FOUND":
+      return "Directory does not exist.";
+    case "NOT_A_DIRECTORY":
+      return "Not a directory.";
+    case "OUTSIDE_ALLOWED_ROOT":
+      return "Outside allowed workspace roots.";
+    case "PERMISSION_DENIED":
+      return "Permission denied.";
+    case "SYMLINK_ESCAPE":
+      return "Symlink escapes workspace roots.";
+    case "IO_ERROR":
+      return "Could not read the directory.";
+    default:
+      return code;
+  }
 }

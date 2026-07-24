@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import type { DirectoryValidationResponse } from "../types";
-import { basename, shortenPath } from "../utils";
+import { basename, shortenPath, workspaceMeetsModeRequirements, validationErrorMessage } from "../utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -13,6 +13,8 @@ export interface WorkspacePathFieldProps {
   onChange: (value: string) => void;
   recentPaths?: string[];
   primaryCwd?: string | null;
+  mode?: string | null;
+  worktreeIsolation?: boolean;
   disabled?: boolean;
   onValidationChange?: (result: DirectoryValidationResponse | null) => void;
 }
@@ -22,6 +24,8 @@ export default function WorkspacePathField({
   onChange,
   recentPaths = [],
   primaryCwd,
+  mode = null,
+  worktreeIsolation = false,
   disabled,
   onValidationChange,
 }: WorkspacePathFieldProps) {
@@ -34,6 +38,13 @@ export default function WorkspacePathField({
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const defaultedRef = useRef(false);
+  const validationSeq = useRef(0);
+  const valueRef = useRef(value);
+  const browseButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   // Default the input to the primary cwd when the field is empty on first render.
   useEffect(() => {
@@ -43,21 +54,36 @@ export default function WorkspacePathField({
     }
   }, [value, primaryCwd, onChange]);
 
+  const applyValidation = useCallback(
+    (result: DirectoryValidationResponse | null, inputAtStart: string) => {
+      if (inputAtStart !== valueRef.current) return;
+      setValidation(result);
+      onValidationChange?.(result);
+    },
+    [onValidationChange],
+  );
+
   const runValidate = useCallback(
     async (path: string) => {
-      if (!path.trim()) {
-        setValidation(null);
-        onValidationChange?.(null);
+      const inputAtStart = path;
+      const seq = ++validationSeq.current;
+
+      if (!inputAtStart.trim()) {
+        if (seq !== validationSeq.current) return;
+        setValidating(false);
+        applyValidation(null, inputAtStart);
         return;
       }
+
       setValidating(true);
       try {
-        const result = await api.validateDirectory(path);
-        setValidation(result);
-        onValidationChange?.(result);
+        const result = await api.validateDirectory(inputAtStart);
+        if (seq !== validationSeq.current) return;
+        applyValidation(result, inputAtStart);
       } catch (err) {
+        if (seq !== validationSeq.current) return;
         const result: DirectoryValidationResponse = {
-          input: path,
+          input: inputAtStart,
           resolvedPath: null,
           exists: false,
           isDirectory: false,
@@ -68,19 +94,22 @@ export default function WorkspacePathField({
           branch: null,
           errorCode: "IO_ERROR",
         };
-        setValidation(result);
-        onValidationChange?.(result);
+        applyValidation(result, inputAtStart);
       } finally {
-        setValidating(false);
+        if (seq === validationSeq.current) {
+          setValidating(false);
+        }
       }
     },
-    [onValidationChange],
+    [applyValidation],
   );
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    setValidation((prev) => (prev && prev.input !== valueRef.current ? null : prev));
+    setValidating(true);
     debounceRef.current = setTimeout(() => {
-      void runValidate(value);
+      void runValidate(valueRef.current);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -97,30 +126,65 @@ export default function WorkspacePathField({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  const display = useMemo(() => {
-    if (!value) return "";
-    return shortenPath(value);
-  }, [value]);
+  const usableValidation = useMemo(() => {
+    if (!validation) return null;
+    return validation.input === value ? validation : null;
+  }, [validation, value]);
 
-  const status = validationStatus(validation);
-  const canCreate = validation?.allowed && validation.exists && validation.isDirectory && validation.readable;
+  const check = useMemo(
+    () => workspaceMeetsModeRequirements(usableValidation, mode, worktreeIsolation),
+    [usableValidation, mode, worktreeIsolation],
+  );
+
+  const status = useMemo(() => {
+    if (validating) return "Validating…";
+    if (!usableValidation) return value ? null : "Enter or select a workspace directory";
+    if (check.allowed) {
+      const parts: string[] = ["Directory exists"];
+      if (usableValidation.gitRepository) {
+        parts.push(`Git repository · ${usableValidation.branch ?? "unknown branch"}`);
+      }
+      if (usableValidation.readable) parts.push("Readable");
+      if (usableValidation.writable) parts.push("Writable");
+      if (!usableValidation.writable && mode === "ask") parts.push("Read-only (Ask mode allowed)");
+      return parts.join(" · ");
+    }
+    return check.reason ?? validationErrorMessage(usableValidation.errorCode ?? "IO_ERROR");
+  }, [validating, usableValidation, check, value, mode]);
 
   const handleSelectRecent = (path: string) => {
     onChange(path);
     setRecentOpen(false);
+    setTouched(true);
+    setValidation(null);
+    ++validationSeq.current;
     void runValidate(path);
   };
 
   const handlePickerSelect = (path: string) => {
     onChange(path);
     setTouched(true);
+    setValidation(null);
+    ++validationSeq.current;
     void runValidate(path);
   };
 
   const handleBlur = () => {
     setTouched(true);
+    setValidation((prev) => (prev && prev.input !== valueRef.current ? null : prev));
     void runValidate(value);
   };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onChange(e.target.value);
+    setTouched(false);
+    // A new value immediately invalidates any previous validation.
+    ++validationSeq.current;
+    setValidation(null);
+    onValidationChange?.(null);
+  };
+
+  const canCreate = check.allowed;
 
   return (
     <div ref={containerRef} className="flex flex-col gap-1.5">
@@ -132,10 +196,7 @@ export default function WorkspacePathField({
           <Input
             id="session-cwd"
             value={value}
-            onChange={(e) => {
-              onChange(e.target.value);
-              setTouched(false);
-            }}
+            onChange={handleChange}
             onBlur={handleBlur}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -151,17 +212,19 @@ export default function WorkspacePathField({
             disabled={disabled}
             className="tnum h-9 w-full min-w-0 border-transparent bg-secondary pr-8 font-mono text-xs shadow-none focus-visible:border-input"
             title={value || primaryCwd || ""}
+            aria-invalid={touched && !canCreate}
+            aria-describedby={touched && status ? "workspace-status" : undefined}
           />
           {validating && (
             <Loader2Icon className="absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
           )}
-          {!validating && validation && (
+          {!validating && usableValidation && (
             <span
               className={cn(
                 "absolute right-2.5 top-1/2 -translate-y-1/2 text-xs",
                 canCreate ? "text-emerald-500" : "text-amber-500",
               )}
-              title={validation.resolvedPath ?? validation.input}
+              title={usableValidation.resolvedPath ?? usableValidation.input}
             >
               {canCreate ? "✓" : "!"}
             </span>
@@ -194,6 +257,7 @@ export default function WorkspacePathField({
                     key={p}
                     type="button"
                     role="option"
+                    aria-selected={p === value}
                     onClick={() => handleSelectRecent(p)}
                     className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-secondary"
                   >
@@ -212,6 +276,7 @@ export default function WorkspacePathField({
 
           <button
             type="button"
+            ref={browseButtonRef}
             onClick={() => setOpen(true)}
             disabled={disabled}
             className="flex h-9 flex-none items-center gap-1.5 rounded-lg bg-secondary px-3 text-xs font-medium text-secondary-foreground hover:bg-accent active:scale-[0.98] disabled:opacity-50"
@@ -223,7 +288,11 @@ export default function WorkspacePathField({
       </div>
 
       {touched && status && (
-        <div className="flex items-center gap-1.5 text-xs" aria-live="polite">
+        <div
+          id="workspace-status"
+          className="flex items-center gap-1.5 text-xs"
+          aria-live="polite"
+        >
           {canCreate ? (
             <CheckIcon className="size-3.5 text-emerald-500" />
           ) : (
@@ -236,7 +305,9 @@ export default function WorkspacePathField({
               </span>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="max-w-xs">
-              <p className="break-all font-mono text-xs">{validation?.resolvedPath ?? value}</p>
+              <p className="break-all font-mono text-xs">
+                {(usableValidation?.resolvedPath ?? value) || primaryCwd || ""}
+              </p>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -245,30 +316,11 @@ export default function WorkspacePathField({
       <DirectoryPickerModal
         open={open}
         onOpenChange={setOpen}
-        initialPath={validation?.resolvedPath ?? value ?? primaryCwd ?? "/"}
+        initialPath={usableValidation?.resolvedPath ?? value ?? primaryCwd ?? "/"}
+        mode={mode}
+        worktreeIsolation={worktreeIsolation}
         onSelect={handlePickerSelect}
       />
     </div>
   );
-}
-
-function validationStatus(result: DirectoryValidationResponse | null): string | null {
-  if (!result) return null;
-  if (!result.allowed) {
-    if (result.errorCode === "OUTSIDE_ALLOWED_ROOT") return "Outside configured workspace roots";
-    if (result.errorCode === "PATH_NOT_FOUND") return "Directory does not exist";
-    if (result.errorCode === "NOT_A_DIRECTORY") return "Not a directory";
-    if (result.errorCode === "PERMISSION_DENIED") return "Permission denied";
-    if (result.errorCode === "SYMLINK_ESCAPE") return "Symlink escapes workspace roots";
-    if (result.errorCode === "INVALID_PATH") return "Invalid path";
-    return result.errorCode ?? "Invalid workspace";
-  }
-  if (!result.exists) return "Directory will be created?"; // Not used in create flow.
-  const parts: string[] = [];
-  parts.push("Directory exists");
-  if (result.gitRepository) parts.push(`Git repository · ${result.branch ?? "unknown branch"}`);
-  if (result.readable) parts.push("Readable");
-  if (result.writable) parts.push("Writable");
-  if (!result.writable) parts.push("Read-only");
-  return parts.join(" · ");
 }

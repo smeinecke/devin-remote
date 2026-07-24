@@ -1,16 +1,17 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert";
 import fs from "node:fs/promises";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import {
   getAllowedRoots,
   isWithinRoot,
   listDirectories,
+  listRoots,
   validateDirectory,
   createDirectory,
   rootLabel,
+  checkWorkspaceForMode,
 } from "../src/filesystem.js";
 
 function fakeStore(workspaces: string[] = []) {
@@ -53,8 +54,19 @@ describe("filesystem API", () => {
     assert.strictEqual(listing.allowed, true);
     assert.strictEqual(listing.errorCode, undefined);
     const names = listing.entries.map((e) => e.name).sort();
-    assert.deepStrictEqual(names, [".hidden", "projects", "shared"]);
+    assert.deepStrictEqual(names, ["projects", "shared"]);
     assert.ok(!listing.entries.some((e) => e.name === "readme.txt"));
+  });
+
+  it("excludes hidden directories by default", async () => {
+    const listing = await listDirectories(dirs.root, roots);
+    assert.ok(!listing.entries.some((e) => e.name === ".hidden"));
+  });
+
+  it("includes hidden directories when showHidden is true", async () => {
+    const listing = await listDirectories(dirs.root, roots, true);
+    const names = listing.entries.map((e) => e.name).sort();
+    assert.deepStrictEqual(names, [".hidden", "projects", "shared"]);
   });
 
   it("rejects path traversal", async () => {
@@ -91,11 +103,9 @@ describe("filesystem API", () => {
     assert.strictEqual(listing.errorCode, "NOT_A_DIRECTORY");
   });
 
-  it("filters hidden directories by default", async () => {
+  it("reports current directory writability", async () => {
     const listing = await listDirectories(dirs.root, roots);
-    const hidden = listing.entries.filter((e) => e.hidden);
-    assert.strictEqual(hidden.length, 1);
-    assert.strictEqual(hidden[0].name, ".hidden");
+    assert.strictEqual(listing.writable, true);
   });
 
   it("creates a directory inside an allowed root", async () => {
@@ -106,6 +116,43 @@ describe("filesystem API", () => {
     assert.strictEqual(result.isDirectory, true);
     const stat = await fs.stat(target);
     assert.ok(stat.isDirectory());
+  });
+
+  it("creates a directory through a normalised path", async () => {
+    const target = path.join(dirs.root, "projects", "..", "new-project");
+    const result = await createDirectory(target, roots);
+    assert.strictEqual(result.allowed, true);
+    assert.strictEqual(result.exists, true);
+    assert.strictEqual(result.isDirectory, true);
+    const createdAt = path.join(dirs.root, "new-project");
+    const stat = await fs.stat(createdAt);
+    assert.ok(stat.isDirectory());
+  });
+
+  it("creates a directory through a symlink parent inside the root", async () => {
+    const subdir = path.join(dirs.root, "subdir");
+    const link = path.join(dirs.root, "link");
+    await fs.mkdir(subdir);
+    await fs.symlink(subdir, link, "dir");
+    const target = path.join(link, "new");
+    const result = await createDirectory(target, roots);
+    assert.strictEqual(result.allowed, true);
+    assert.strictEqual(result.exists, true);
+    assert.strictEqual(result.isDirectory, true);
+    const stat = await fs.stat(path.join(subdir, "new"));
+    assert.ok(stat.isDirectory());
+  });
+
+  it("rejects creating a directory through a symlink parent that escapes", async () => {
+    const link = path.join(dirs.root, "escape-link");
+    await fs.symlink(dirs.outside, link, "dir");
+    const target = path.join(link, "new");
+    const result = await createDirectory(target, roots);
+    assert.strictEqual(result.allowed, false);
+    assert.ok(
+      result.errorCode === "SYMLINK_ESCAPE" || result.errorCode === "OUTSIDE_ALLOWED_ROOT",
+      `unexpected error code: ${result.errorCode}`,
+    );
   });
 
   it("rejects invalid folder names", async () => {
@@ -154,7 +201,7 @@ describe("filesystem API", () => {
   });
 
   it("only returns child directories, not files", async () => {
-    const listing = await listDirectories(dirs.root, roots);
+    const listing = await listDirectories(dirs.root, roots, true);
     for (const e of listing.entries) {
       const stat = await fs.stat(e.path);
       assert.ok(stat.isDirectory(), `${e.name} is not a directory`);
@@ -183,5 +230,56 @@ describe("filesystem API", () => {
     const store = fakeStore(["/w1"]);
     const roots = getAllowedRoots("/primary", store, {});
     assert.deepStrictEqual(roots, ["/primary", "/w1"]);
+  });
+
+  it("lists only existing, readable, canonical roots and deduplicates", async () => {
+    const a = await fs.mkdtemp(path.join(os.tmpdir(), "fs-root-a-"));
+    const linkToA = path.join(dirs.tmp, "link-to-a");
+    const missing = path.join(dirs.tmp, "missing");
+    const file = path.join(dirs.tmp, "file");
+    await fs.symlink(a, linkToA, "dir");
+    await fs.writeFile(file, "x");
+
+    try {
+      const store = fakeStore([linkToA, a, missing, file]);
+      // Use a nonexistent primary cwd so the only configured roots are the
+      // workspace list, which should collapse to one canonical root.
+      const primaryCwd = path.join(dirs.tmp, "primary-missing");
+      const roots = await listRoots(primaryCwd, store, {});
+      const paths = roots.map((r) => r.path);
+      assert.strictEqual(paths.length, 1);
+      assert.ok(paths[0].startsWith(a), `expected canonical path for ${a}, got ${paths[0]}`);
+    } finally {
+      await fs.rm(a, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a read-only directory as writable=false", async () => {
+    const roDir = path.join(dirs.tmp, "readonly");
+    await fs.mkdir(roDir);
+    await fs.chmod(roDir, 0o555);
+    try {
+      const listing = await listDirectories(roDir, [roDir]);
+      assert.strictEqual(listing.writable, false);
+      const v = await validateDirectory(roDir, [roDir]);
+      assert.strictEqual(v.writable, false);
+      assert.strictEqual(v.readable, true);
+    } finally {
+      await fs.chmod(roDir, 0o755);
+    }
+  });
+
+  it("checkWorkspaceForMode respects mode and isolation", () => {
+    const writable: any = { allowed: true, exists: true, isDirectory: true, readable: true, writable: true };
+    const readonly: any = { allowed: true, exists: true, isDirectory: true, readable: true, writable: false };
+    const invalid: any = { allowed: false, exists: false, isDirectory: false, readable: false, writable: false };
+
+    assert.strictEqual(checkWorkspaceForMode(writable, "ask").allowed, true);
+    assert.strictEqual(checkWorkspaceForMode(readonly, "ask").allowed, true);
+    assert.strictEqual(checkWorkspaceForMode(writable, "accept-edits").allowed, true);
+    assert.strictEqual(checkWorkspaceForMode(readonly, "accept-edits").allowed, false);
+    assert.strictEqual(checkWorkspaceForMode(readonly, "plan").allowed, false);
+    assert.strictEqual(checkWorkspaceForMode(readonly, "ask", true).allowed, false);
+    assert.strictEqual(checkWorkspaceForMode(invalid, "ask").allowed, false);
   });
 });

@@ -62,6 +62,47 @@ export type DirectoryErrorCode =
   | "SYMLINK_ESCAPE"
   | "IO_ERROR";
 
+export interface WorkspaceModeCheck {
+  allowed: boolean;
+  requiresWritable: boolean;
+  reason: string | null;
+}
+
+export function checkWorkspaceForMode(
+  validation: DirectoryValidationResponse,
+  mode: string | undefined | null,
+  isolate = false,
+): WorkspaceModeCheck {
+  if (!validation.allowed || !validation.exists || !validation.isDirectory || !validation.readable) {
+    return { allowed: false, requiresWritable: false, reason: null };
+  }
+
+  if (isolate) {
+    if (!validation.writable) {
+      return {
+        allowed: false,
+        requiresWritable: true,
+        reason: "Worktree isolation requires a writable parent directory.",
+      };
+    }
+    return { allowed: true, requiresWritable: true, reason: null };
+  }
+
+  if (mode === "ask") {
+    return { allowed: true, requiresWritable: false, reason: null };
+  }
+
+  if (!validation.writable) {
+    return {
+      allowed: false,
+      requiresWritable: true,
+      reason: mode ? `Mode "${mode}" requires a writable workspace.` : "A writable workspace is required.",
+    };
+  }
+
+  return { allowed: true, requiresWritable: true, reason: null };
+}
+
 const HOME = os.homedir();
 
 export function getAllowedRoots(
@@ -327,7 +368,7 @@ export async function validateDirectory(
 export async function listDirectories(
   input: string,
   roots: string[],
-  _showHidden = false,
+  showHidden = false,
 ): Promise<DirectoryListingResponse> {
   const validation = await resolveAndCheck(input, roots, { mustExist: true, mustBeDirectory: true });
 
@@ -344,10 +385,13 @@ export async function listDirectories(
 
   const dir = validation.resolvedPath!;
   let entries: DirectoryEntry[] = [];
+  const writable = await accessWrite(dir).catch(() => false);
 
   try {
     const items = await fs.readdir(dir, { withFileTypes: true });
     for (const item of items) {
+      if (item.name.startsWith(".") && !showHidden) continue;
+
       const childPath = path.join(dir, item.name);
       const childCanonical = await canonicalPath(childPath);
       const { allowed: childAllowed } = await isPathWithinAnyRoot(childCanonical, roots);
@@ -393,8 +437,6 @@ export async function listDirectories(
     const { allowed: parentAllowed } = await isPathWithinAnyRoot(parentCanonical, roots);
     if (parentAllowed) parentEntry = parentCanonical;
   }
-
-  const writable = await accessWrite(dir).catch(() => false);
 
   return {
     path: dir,
@@ -443,7 +485,7 @@ export async function createDirectory(
 
   const parent = path.dirname(resolved);
   const parentValidation = await resolveAndCheck(parent, roots, { mustExist: true, mustBeDirectory: true });
-  if (!parentValidation.allowed || parentValidation.errorCode) {
+  if (!parentValidation.allowed || !parentValidation.exists || !parentValidation.isDirectory || !parentValidation.resolvedPath || !parentValidation.writable) {
     return {
       input,
       resolvedPath: resolved,
@@ -458,12 +500,35 @@ export async function createDirectory(
     };
   }
 
+  const canonicalParent = parentValidation.resolvedPath;
+  const target = path.join(canonicalParent, name);
+  let created = false;
+
   try {
-    const st = await fs.stat(resolved);
-    if (!st.isDirectory()) {
+    try {
+      const existing = await fs.realpath(target);
+      // Target already exists or is a symlink. Validate what it resolves to.
+      const existingValidation = await validateDirectory(existing, roots);
+      if (!existingValidation.allowed) {
+        return {
+          input,
+          resolvedPath: existing,
+          exists: existingValidation.exists,
+          isDirectory: existingValidation.isDirectory,
+          readable: false,
+          writable: false,
+          allowed: false,
+          gitRepository: false,
+          branch: null,
+          errorCode: existingValidation.errorCode ?? "OUTSIDE_ALLOWED_ROOT",
+        };
+      }
+      if (existingValidation.exists && existingValidation.isDirectory) {
+        return existingValidation;
+      }
       return {
         input,
-        resolvedPath: resolved,
+        resolvedPath: existing,
         exists: true,
         isDirectory: false,
         readable: false,
@@ -473,55 +538,69 @@ export async function createDirectory(
         branch: null,
         errorCode: "NOT_A_DIRECTORY",
       };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw err;
     }
+
+    await fs.mkdir(target);
+    created = true;
+
+    const result = await validateDirectory(target, roots);
+    if (!result.allowed || !result.exists || !result.isDirectory) {
+      if (created) {
+        await fs.rmdir(target).catch(() => {});
+      }
+      return {
+        input,
+        resolvedPath: result.resolvedPath ?? target,
+        exists: result.exists,
+        isDirectory: result.isDirectory,
+        readable: false,
+        writable: false,
+        allowed: false,
+        gitRepository: false,
+        branch: null,
+        errorCode: result.errorCode ?? "IO_ERROR",
+      };
+    }
+
+    return result;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code !== "ENOENT") {
-      return {
-        input,
-        resolvedPath: resolved,
-        exists: false,
-        isDirectory: false,
-        readable: false,
-        writable: false,
-        allowed: true,
-        gitRepository: false,
-        branch: null,
-        errorCode: code === "EACCES" || code === "EPERM" ? "PERMISSION_DENIED" : "IO_ERROR",
-      };
-    }
-    try {
-      await fs.mkdir(resolved);
-    } catch (mkdirErr) {
-      const mkdirCode = (mkdirErr as NodeJS.ErrnoException).code;
-      return {
-        input,
-        resolvedPath: resolved,
-        exists: false,
-        isDirectory: false,
-        readable: false,
-        writable: false,
-        allowed: true,
-        gitRepository: false,
-        branch: null,
-        errorCode: mkdirCode === "EACCES" || mkdirCode === "EPERM" ? "PERMISSION_DENIED" : "IO_ERROR",
-      };
-    }
+    return {
+      input,
+      resolvedPath: resolved,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      allowed: false,
+      gitRepository: false,
+      branch: null,
+      errorCode: code === "EACCES" || code === "EPERM" ? "PERMISSION_DENIED" : code === "EEXIST" ? "NOT_A_DIRECTORY" : "IO_ERROR",
+    };
   }
-
-  return validateDirectory(resolved, roots);
 }
 
 export async function listRoots(primaryCwd: string, store: Store, env?: NodeJS.ProcessEnv): Promise<FilesystemRoot[]> {
-  const roots = getAllowedRoots(primaryCwd, store, env);
+  const configured = getAllowedRoots(primaryCwd, store, env);
+  const seen = new Set<string>();
   const out: FilesystemRoot[] = [];
-  for (const raw of roots) {
+
+  for (const raw of configured) {
     try {
       const canonical = await canonicalPath(raw);
+      const stat = await fs.stat(canonical);
+      if (!stat.isDirectory()) continue;
+      await fs.access(canonical, fsConstants.R_OK);
+      if (seen.has(canonical)) continue;
+      seen.add(canonical);
       out.push({ path: canonical, label: rootLabel(canonical) });
     } catch {
-      // Skip roots that no longer exist.
+      // Skip roots that no longer exist or are not readable directories.
     }
   }
+
   return out;
 }

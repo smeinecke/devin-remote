@@ -15,6 +15,8 @@ import {
   listDirectories,
   validateDirectory,
   createDirectory,
+  checkWorkspaceForMode,
+  type DirectoryValidationResponse,
 } from "./filesystem.js";
 
 export interface ApiContext {
@@ -139,25 +141,37 @@ export async function handleApi(
 
     if (m === "POST" && url.pathname === "/api/sessions") {
       const body = await readJson(req);
-      let cwd = String(body.cwd ?? ctx.primaryCwd);
+      const rawCwd = String(body.cwd ?? ctx.primaryCwd);
+      const mode = typeof body.mode === "string" ? body.mode : "";
       const isolate = ctx.store.settings.worktreeIsolation && (body.isolate !== false);
 
       const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
-      const validation = await validateDirectory(cwd, roots);
+      const validation = await validateDirectory(rawCwd, roots);
       if (!validation.allowed || !validation.exists || !validation.isDirectory || !validation.readable) {
         return json(res, 400, {
           error: validation.errorCode
-            ? `${validation.errorCode}: ${cwd}`
-            : `invalid workspace directory: ${cwd}`,
+            ? `${validation.errorCode}: ${rawCwd}`
+            : `invalid workspace directory: ${rawCwd}`,
           validation,
         });
       }
 
-      const gitRoot = await isGitRepository(cwd);
-      let worktreeInfo: { root: string; worktree: string; branch: string; isIsolated: boolean } = { root: cwd, worktree: cwd, branch: "", isIsolated: false };
+      const workspaceCheck = checkWorkspaceForMode(validation, mode, isolate);
+      if (!workspaceCheck.allowed) {
+        return json(res, 400, {
+          error: workspaceCheck.reason ?? `workspace does not meet mode requirements: ${rawCwd}`,
+          validation,
+          workspaceCheck,
+        });
+      }
+
+      const canonicalCwd = validation.resolvedPath!;
+      const gitRoot = await isGitRepository(canonicalCwd);
+      let worktreeInfo: { root: string; worktree: string; branch: string; isIsolated: boolean } = { root: canonicalCwd, worktree: canonicalCwd, branch: "", isIsolated: false };
+      let cwd = canonicalCwd;
       if (gitRoot && isolate) {
         const tempId = `new-${Date.now().toString(36)}`;
-        worktreeInfo = await createWorktree(tempId, cwd);
+        worktreeInfo = await createWorktree(tempId, canonicalCwd);
         cwd = worktreeInfo.worktree;
       }
 

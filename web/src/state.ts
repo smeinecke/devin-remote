@@ -202,7 +202,7 @@ export async function createSession(cwd: string): Promise<void> {
     return;
   }
   try {
-    const res = await api.createSession(dir, state.settings.worktreeIsolation);
+    const res = await api.createSession(dir, state.settings.worktreeIsolation, state.settings.defaultMode);
     ensureSession({
       sessionId: res.sessionId,
       cwd: res.cwd,
@@ -239,7 +239,7 @@ export async function clearSession(sessionId: string): Promise<void> {
     return;
   }
   try {
-    const res = await api.createSession(dir, false);
+    const res = await api.createSession(dir, false, s.currentModeId ?? "");
     ensureSession({
       sessionId: res.sessionId,
       cwd: res.cwd,

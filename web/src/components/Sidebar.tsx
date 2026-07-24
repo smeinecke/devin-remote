@@ -11,7 +11,7 @@ import {
   useStore,
 } from "../state";
 import type { SessionState } from "../state";
-import { fuzzyScore, relTime, truncate } from "../utils";
+import { fuzzyScore, relTime, truncate, workspaceMeetsModeRequirements } from "../utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -80,20 +80,25 @@ export default function Sidebar() {
     return filtered.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
   }, [state.sessions, filter]);
 
-  const canCreate =
-    !creating &&
-    validation?.allowed &&
-    validation.exists &&
-    validation.isDirectory &&
-    validation.readable;
+  const validationForInput =
+    validation && validation.input === cwdInput.trim() ? validation : null;
+
+  const workspaceCheck = workspaceMeetsModeRequirements(
+    validationForInput,
+    state.settings.defaultMode,
+    state.settings.worktreeIsolation,
+  );
+
+  const canCreate = !creating && workspaceCheck.allowed;
 
   const submitNew = async () => {
     const dir = cwdInput.trim() || state.meta?.primaryCwd || "";
-    if (!dir || creating) return;
+    if (!dir || creating || !canCreate) return;
     setCreating(true);
     await createSession(dir);
     setCreating(false);
     setCwdInput("");
+    setValidation(null);
   };
 
   const commitRename = async (id: string) => {
@@ -132,6 +137,8 @@ export default function Sidebar() {
           onChange={setCwdInput}
           recentPaths={workspaces}
           primaryCwd={state.meta?.primaryCwd}
+          mode={state.settings.defaultMode}
+          worktreeIsolation={state.settings.worktreeIsolation}
           disabled={creating}
           onValidationChange={setValidation}
         />

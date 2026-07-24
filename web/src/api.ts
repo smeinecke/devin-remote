@@ -38,8 +38,8 @@ export const api = {
 
   listSessions: () => req<{ sessions: SessionSummary[] }>("GET", "/api/sessions"),
 
-  createSession: (cwd: string, isolate?: boolean) =>
-    req<{ sessionId: string; processGeneration: number; cwd: string; branch: string | null; worktree: string | null; modes: unknown }>("POST", "/api/sessions", { cwd, isolate }),
+  createSession: (cwd: string, isolate?: boolean, mode?: string) =>
+    req<{ sessionId: string; processGeneration: number; cwd: string; branch: string | null; worktree: string | null; modes: unknown }>("POST", "/api/sessions", { cwd, isolate, mode }),
 
   attachSession: (sessionId: string) =>
     req<{ ok: boolean; status: string; processGeneration: number; sessionId: string; running: boolean; cancellable: boolean; activeOperation: ActiveOperation | null }>(
