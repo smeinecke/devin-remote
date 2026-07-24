@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -18,6 +19,7 @@ import {
   type ReasoningMessagePartComponent,
   type ReasoningGroupComponent,
 } from "@assistant-ui/react";
+import { TextMessagePartProvider } from "@assistant-ui/core/react";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import {
   Collapsible,
@@ -25,11 +27,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { makeReasoningPreview } from "@/utils";
+import { splitReasoningExcerpt, normalizePreviewFragment, type ReasoningExcerpt } from "@/utils";
 
 const ANIMATION_DURATION = 200;
 
 const ReasoningPreviewContext = createContext(false);
+const ReasoningStreamingContext = createContext(false);
+const ReasoningExcerptContext = createContext<ReasoningExcerpt | null>(null);
 
 const reasoningVariants = cva("aui-reasoning-root mb-2 w-full", {
   variants: {
@@ -119,9 +123,11 @@ function ReasoningRoot({
       }
       {...props}
     >
-      <ReasoningPreviewContext.Provider value={isPreview}>
-        {children}
-      </ReasoningPreviewContext.Provider>
+      <ReasoningStreamingContext.Provider value={!!streaming}>
+        <ReasoningPreviewContext.Provider value={isPreview}>
+          {children}
+        </ReasoningPreviewContext.Provider>
+      </ReasoningStreamingContext.Provider>
     </Collapsible>
   );
 }
@@ -164,6 +170,20 @@ function ReasoningFade({
   );
 }
 
+function ReasoningExcerptProvider({
+  excerpt,
+  children,
+}: {
+  excerpt: ReasoningExcerpt;
+  children: React.ReactNode;
+}) {
+  return (
+    <ReasoningExcerptContext.Provider value={excerpt}>
+      {children}
+    </ReasoningExcerptContext.Provider>
+  );
+}
+
 function ReasoningTrigger({
   active,
   duration,
@@ -175,7 +195,15 @@ function ReasoningTrigger({
   duration?: number;
   text?: string;
 }) {
-  const preview = text ? makeReasoningPreview(text) : "";
+  const excerpt = useContext(ReasoningExcerptContext);
+  const localExcerpt = text ? splitReasoningExcerpt(text) : null;
+  const previewSource = excerpt?.preview ?? localExcerpt?.preview ?? "";
+  const preview =
+    excerpt?.displayPreview ??
+    localExcerpt?.displayPreview ??
+    normalizePreviewFragment(previewSource);
+  const truncated = excerpt?.truncated ?? localExcerpt?.truncated ?? false;
+  const continuation = excerpt?.continuation ?? "";
 
   if (!preview && !active) {
     return null;
@@ -184,6 +212,9 @@ function ReasoningTrigger({
   return (
     <CollapsibleTrigger
       aria-label="Show reasoning"
+      aria-expanded={continuation ? undefined : false}
+      aria-disabled={!continuation}
+      disabled={!continuation}
       data-slot="reasoning-trigger"
       className={cn(
         "aui-reasoning-trigger group/trigger flex w-full min-w-0 items-start gap-2 py-1 text-sm transition-[color,scale] active:scale-[0.98]",
@@ -205,6 +236,7 @@ function ReasoningTrigger({
         )}
       >
         {preview}
+        {truncated ? "…" : null}
       </span>
       {duration ? (
         <span
@@ -214,14 +246,16 @@ function ReasoningTrigger({
           {duration}s
         </span>
       ) : null}
-      <ChevronDownIcon
-        data-slot="reasoning-trigger-chevron"
-        className={cn(
-          "aui-reasoning-trigger-chevron mt-0.5 size-4 shrink-0",
-          "transition-transform duration-(--animation-duration) ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
-          "group-data-[state=open]/trigger:rotate-180",
-        )}
-      />
+      {continuation ? (
+        <ChevronDownIcon
+          data-slot="reasoning-trigger-chevron"
+          className={cn(
+            "aui-reasoning-trigger-chevron mt-0.5 size-4 shrink-0",
+            "transition-transform duration-(--animation-duration) ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none",
+            "group-data-[state=open]/trigger:rotate-180",
+          )}
+        />
+      ) : null}
     </CollapsibleTrigger>
   );
 }
@@ -256,12 +290,28 @@ function ReasoningContent({
   );
 }
 
+function ReasoningMarkdown({
+  text,
+  isRunning,
+}: {
+  text: string;
+  isRunning?: boolean;
+}) {
+  return (
+    <TextMessagePartProvider text={text} isRunning={isRunning ?? false}>
+      <MarkdownText />
+    </TextMessagePartProvider>
+  );
+}
+
 function ReasoningText({
   className,
   children,
   ...props
 }: React.ComponentProps<"div">) {
   const isPreview = useContext(ReasoningPreviewContext);
+  const isStreaming = useContext(ReasoningStreamingContext);
+  const excerpt = useContext(ReasoningExcerptContext);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -278,6 +328,12 @@ function ReasoningText({
     observer.observe(contentEl);
     return () => observer.disconnect();
   }, [isPreview]);
+
+  const content =
+    children ??
+    (excerpt?.continuation ? (
+      <ReasoningMarkdown text={excerpt.continuation} isRunning={isStreaming} />
+    ) : null);
 
   return (
     <div
@@ -302,7 +358,7 @@ function ReasoningText({
       {...props}
     >
       <div ref={contentRef} className="aui-reasoning-text-content space-y-2">
-        {children}
+        {content}
       </div>
     </div>
   );
@@ -332,18 +388,36 @@ const ReasoningGroupImpl: ReasoningGroupComponent = ({
       .join("");
   });
 
-  const preview = makeReasoningPreview(text);
-  if (!preview && !isReasoningStreaming) {
+  const lastSplitRef = useRef(0);
+  const excerpt = useMemo(() => {
+    const result = splitReasoningExcerpt(text, 220, lastSplitRef.current);
+    return result;
+  }, [text]);
+
+  useEffect(() => {
+    if (excerpt.splitAt !== undefined) {
+      lastSplitRef.current = excerpt.splitAt;
+    }
+  }, [excerpt]);
+
+  if (!excerpt.displayPreview && !isReasoningStreaming) {
     return null;
   }
 
   return (
-    <ReasoningRoot streaming={isReasoningStreaming} variant={isReasoningStreaming ? "muted" : "ghost"}>
-      <ReasoningTrigger active={isReasoningStreaming} text={text} />
-      <ReasoningContent aria-busy={isReasoningStreaming}>
-        <ReasoningText>{children}</ReasoningText>
-      </ReasoningContent>
-    </ReasoningRoot>
+    <ReasoningExcerptProvider excerpt={excerpt}>
+      <ReasoningRoot
+        streaming={isReasoningStreaming}
+        variant={isReasoningStreaming ? "muted" : "ghost"}
+      >
+        <ReasoningTrigger active={isReasoningStreaming} />
+        {excerpt.continuation ? (
+          <ReasoningContent aria-busy={isReasoningStreaming}>
+            <ReasoningText />
+          </ReasoningContent>
+        ) : null}
+      </ReasoningRoot>
+    </ReasoningExcerptProvider>
   );
 };
 
@@ -382,5 +456,7 @@ export {
   ReasoningContent,
   ReasoningText,
   ReasoningFade,
+  ReasoningExcerptProvider,
+  ReasoningMarkdown,
   reasoningVariants,
 };

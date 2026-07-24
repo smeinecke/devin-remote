@@ -25,23 +25,269 @@ export function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
+export interface ReasoningExcerpt {
+  /** Source fragment used for the preview ( Markdown is preserved). */
+  preview: string;
+  /** Plain-text preview ready for the collapsed trigger. */
+  displayPreview: string;
+  /** Markdown source that continues after the preview. */
+  continuation: string;
+  /** Whether the preview was truncated (the chevron should be shown). */
+  truncated: boolean;
+  /** Offset in the cleaned source where the split occurred. */
+  splitAt?: number;
+}
+
+const REASONING_PREVIEW_MAX_LENGTH = 220;
+
 /**
- * Produce a compact plain-text preview from reasoning content.
- * Collapses whitespace, removes Markdown heading/blockquote markers, replaces
- * fenced code blocks with a marker, and only appends an ellipsis when truncated.
+ * Split reasoning text into a plain-text preview and a Markdown continuation.
+ *
+ * The split is performed on the original source first, then only the preview
+ * fragment is normalized for display. This keeps the continuation valid Markdown
+ * and lets preview + continuation reconstruct the source without duplicating
+ * text in the UI.
  */
-export function makeReasoningPreview(text: string, maxLength = 220): string {
-  const compact = text
-    .replace(/```[\s\S]*?```/g, " [code] ")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^>\s?/gm, "")
-    .replace(/\s+/g, " ")
-    .trim();
+export function splitReasoningExcerpt(
+  source: string,
+  maxPreviewLength = REASONING_PREVIEW_MAX_LENGTH,
+  previousSplitAt?: number,
+): ReasoningExcerpt {
+  const cleaned = normalizeLineEndings(source);
+  const length = cleaned.length;
 
-  if (!compact) return "";
-  if (compact.length <= maxLength) return compact;
+  if (length <= maxPreviewLength) {
+    return {
+      preview: cleaned,
+      displayPreview: normalizePreviewFragment(cleaned),
+      continuation: "",
+      truncated: false,
+      splitAt: length,
+    };
+  }
 
-  return `${compact.slice(0, maxLength - 1).trimEnd()}…`;
+  const splitAt = findReasoningSplitIndex(cleaned, maxPreviewLength, previousSplitAt);
+  const previewSource = cleaned.slice(0, splitAt);
+  const continuationSource = cleaned.slice(splitAt);
+
+  return {
+    preview: previewSource,
+    displayPreview: normalizePreviewFragment(previewSource),
+    continuation: continuationSource,
+    truncated: splitAt < length,
+    splitAt,
+  };
+}
+
+function normalizeLineEndings(source: string): string {
+  return source.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+export function normalizePreviewFragment(text: string): string {
+  return (
+    text
+      // Replace fenced code blocks with a compact marker in the preview only.
+      .replace(/^[ \t]{0,3}```[\s\S]*?^[ \t]{0,3}```[ \t]*\n?/gm, " [code] ")
+      // Strip heading and blockquote markers.
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^>\s?/gm, "")
+      // Collapse all whitespace so line-clamp can wrap predictably.
+      .replace(/\s+/g, " ")
+      .trimEnd()
+  );
+}
+
+function isWhitespace(ch: string): boolean {
+  return /\s/.test(ch);
+}
+
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && /\w/.test(ch);
+}
+
+function isParagraphBoundary(cleaned: string, i: number): boolean {
+  return cleaned[i] === "\n" && cleaned[i - 1] === "\n";
+}
+
+function isSentenceBoundary(cleaned: string, i: number): boolean {
+  if (!isWhitespace(cleaned[i] ?? "")) return false;
+  const prev = cleaned[i - 1];
+  if (!prev) return false;
+  if (".!?".includes(prev)) return true;
+  if (["\"", "'", ")"].includes(prev)) {
+    const prev2 = cleaned[i - 2];
+    if (prev2 && ".!?".includes(prev2)) return true;
+  }
+  return false;
+}
+
+function computeSafeSplitPositions(cleaned: string): boolean[] {
+  const length = cleaned.length;
+  const safe: boolean[] = new Array(length + 1).fill(true);
+
+  // Never split inside a Unicode surrogate pair.
+  for (let i = 1; i < length; i++) {
+    const prev = cleaned[i - 1];
+    const curr = cleaned[i];
+    if (!prev || !curr) continue;
+    const prevCode = prev.charCodeAt(0);
+    const currCode = curr.charCodeAt(0);
+    if (prevCode >= 0xd800 && prevCode <= 0xdbff && currCode >= 0xdc00 && currCode <= 0xdfff) {
+      safe[i] = false;
+    }
+    if (prev === "\\") {
+      safe[i] = false;
+    }
+  }
+
+  // Fenced code blocks are atomic.
+  const fenceOpen = /^ {0,3}```[ \t]*[^\n]*(\n|$)/gm;
+  let openMatch: RegExpExecArray | null;
+  while ((openMatch = fenceOpen.exec(cleaned)) !== null) {
+    const start = openMatch.index;
+    const searchFrom = start + openMatch[0].length;
+    const fenceClose = /^ {0,3}```[ \t]*(\n|$)/gm;
+    fenceClose.lastIndex = searchFrom;
+    const closeMatch = fenceClose.exec(cleaned);
+    const end = closeMatch ? closeMatch.index + closeMatch[0].length : length;
+    for (let i = start + 1; i < end; i++) {
+      safe[i] = false;
+    }
+    fenceOpen.lastIndex = end;
+  }
+
+  // Inline code spans are atomic.
+  const inlineCode = /`([^`\n]*?)`/g;
+  let inlineMatch: RegExpExecArray | null;
+  while ((inlineMatch = inlineCode.exec(cleaned)) !== null) {
+    const start = inlineMatch.index;
+    const end = start + inlineMatch[0].length;
+    for (let i = start + 1; i < end; i++) {
+      safe[i] = false;
+    }
+  }
+
+  // Markdown links are atomic.
+  const link = /\[([^\]\n]*)\](?:\(([^)\n]*)\)|\[[^\]\n]*\])/g;
+  let linkMatch: RegExpExecArray | null;
+  while ((linkMatch = link.exec(cleaned)) !== null) {
+    const start = linkMatch.index;
+    const end = start + linkMatch[0].length;
+    for (let i = start + 1; i < end; i++) {
+      safe[i] = false;
+    }
+  }
+
+  return safe;
+}
+
+function findReasoningSplitIndex(
+  cleaned: string,
+  maxPreviewLength: number,
+  previousSplitAt?: number,
+): number {
+  const safe = computeSafeSplitPositions(cleaned);
+  const minBound = Math.max(1, Math.floor(maxPreviewLength * 0.6));
+
+  const candidate = findSplitCandidate(cleaned, maxPreviewLength, safe, minBound);
+
+  if (previousSplitAt !== undefined) {
+    const prev = Math.min(previousSplitAt, cleaned.length);
+    if (
+      prev > 0 &&
+      safe[prev] &&
+      normalizePreviewFragment(cleaned.slice(0, prev)).length <= maxPreviewLength
+    ) {
+      // Keep the split from moving backward once the preview is full.
+      return Math.max(candidate, prev);
+    }
+  }
+
+  return candidate;
+}
+
+function findSplitCandidate(
+  cleaned: string,
+  maxPreviewLength: number,
+  safe: boolean[],
+  minBound: number,
+): number {
+  const target = maxPreviewLength;
+
+  // If the target falls inside an atomic Markdown structure, prefer the
+  // structure's start so we never slice it in half.
+  if (!safe[target]) {
+    const tokenStart = findNearestSafeBackward(cleaned, target, safe, 1);
+    if (tokenStart !== null && tokenStart > 0) {
+      return tokenStart;
+    }
+  }
+
+  const paragraph = findBoundaryBackward(cleaned, target, minBound, safe, (i) =>
+    isParagraphBoundary(cleaned, i),
+  );
+  if (paragraph !== null) return paragraph;
+
+  const sentence = findBoundaryBackward(cleaned, target, minBound, safe, (i) =>
+    isSentenceBoundary(cleaned, i),
+  );
+  if (sentence !== null) return sentence;
+
+  const whitespace = findBoundaryBackward(cleaned, target, minBound, safe, (i) =>
+    isWhitespace(cleaned[i] ?? ""),
+  );
+  if (whitespace !== null) return whitespace;
+
+  const safeBoundary = findBoundaryBackward(cleaned, target, minBound, safe, (i) =>
+    !isWordChar(cleaned[i - 1]) || !isWordChar(cleaned[i]),
+  );
+  if (safeBoundary !== null) return safeBoundary;
+
+  // No good boundary before target; split at the target even if it is mid-word.
+  if (safe[target]) return target;
+
+  // Target is inside an atomic structure and its start is at 0; extend forward.
+  const forward = findNearestSafeForward(cleaned, target, safe);
+  return forward !== null ? forward : cleaned.length;
+}
+
+function findBoundaryBackward(
+  cleaned: string,
+  start: number,
+  minBound: number,
+  safe: boolean[],
+  predicate: (i: number) => boolean,
+): number | null {
+  const end = Math.min(start, cleaned.length);
+  for (let i = end; i >= minBound; i--) {
+    if (safe[i] && predicate(i)) return i;
+  }
+  return null;
+}
+
+function findNearestSafeBackward(
+  cleaned: string,
+  start: number,
+  safe: boolean[],
+  minBound = 1,
+): number | null {
+  const end = Math.min(start - 1, cleaned.length - 1);
+  for (let i = end; i >= minBound; i--) {
+    if (safe[i]) return i;
+  }
+  if (safe[0] && minBound === 0) return 0;
+  return null;
+}
+
+function findNearestSafeForward(
+  cleaned: string,
+  start: number,
+  safe: boolean[],
+): number | null {
+  for (let i = start; i <= cleaned.length; i++) {
+    if (safe[i]) return i;
+  }
+  return null;
 }
 
 export interface WorkspaceSession {
