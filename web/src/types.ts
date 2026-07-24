@@ -403,3 +403,40 @@ export interface UsageResponse {
   byDay: Record<string, UsageDay>;
   recent: UsageRecord[];
 }
+
+// ---- Filesystem API --------------------------------------------------------
+
+export interface FilesystemRoot {
+  path: string;
+  label: string;
+}
+
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  hidden: boolean;
+  readable: boolean;
+  writable: boolean;
+}
+
+export interface DirectoryListingResponse {
+  path: string;
+  parent: string | null;
+  entries: DirectoryEntry[];
+  allowed: boolean;
+  writable: boolean;
+  errorCode?: string;
+}
+
+export interface DirectoryValidationResponse {
+  input: string;
+  resolvedPath: string | null;
+  exists: boolean;
+  isDirectory: boolean;
+  readable: boolean;
+  writable: boolean;
+  allowed: boolean;
+  gitRepository: boolean;
+  branch: string | null;
+  errorCode?: string;
+}

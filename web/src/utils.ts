@@ -408,6 +408,50 @@ export function basename(p: string): string {
   return i >= 0 ? trimmed.slice(i + 1) : trimmed;
 }
 
+export function dirname(p: string): string {
+  const trimmed = p.replace(/[/\\]+$/, "");
+  const i = trimmed.lastIndexOf("/");
+  return i >= 0 ? trimmed.slice(0, i) || "/" : "/";
+}
+
+function splitPath(p: string): string[] {
+  const trimmed = p.replace(/[/\\]+$/, "");
+  return trimmed.split("/").filter((s, i, arr) => !(s === "" && i === 0 && arr.length > 1));
+}
+
+export function shortenPath(p: string, maxLength = 40, home?: string): string {
+  if (!p) return "";
+
+  // Collapse /home/<user> (or an explicitly supplied home directory) to ~.
+  let compact = p.replace(/\\/g, "/");
+  if (home && compact.startsWith(home.replace(/\\/g, "/").replace(/\/$/, ""))) {
+    compact = "~" + compact.slice(home.length);
+  } else if (/^\/home\/[^/]+/.test(compact)) {
+    compact = compact.replace(/^\/home\/[^/]+/, "~");
+  }
+
+  if (compact.length <= maxLength) return compact;
+
+  const parts = splitPath(compact);
+  if (parts.length <= 3) return compact;
+
+  const first = parts[0];
+  const lastTwo = parts.slice(-2);
+  const withTwo = [first, parts[1], "…", ...lastTwo].join("/");
+  if (withTwo.length <= maxLength) return withTwo;
+
+  const withOne = [first, "…", ...lastTwo].join("/");
+  if (withOne.length <= maxLength) return withOne;
+
+  const ellipsisLast = ["…", ...lastTwo].join("/");
+  if (ellipsisLast.length <= maxLength) return ellipsisLast;
+
+  const justLast = ["…", parts[parts.length - 1]].join("/");
+  if (justLast.length <= maxLength) return justLast;
+
+  return parts[parts.length - 1] || compact;
+}
+
 export function relTime(input: string | number | null | undefined): string {
   if (!input) return "";
   const t = typeof input === "number" ? input : Date.parse(input);

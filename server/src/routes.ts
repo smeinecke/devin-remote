@@ -9,6 +9,13 @@ import type { SessionMetadata as ControllerSessionMetadata } from "./session-con
 import { saveUpload, serveUpload, uploadPath } from "./uploads.js";
 import { buildSessionZip } from "./export.js";
 import { isGitRepository, createWorktree, cleanupWorktree, rollbackCreatedWorktree } from "./worktree.js";
+import {
+  getAllowedRoots,
+  listRoots,
+  listDirectories,
+  validateDirectory,
+  createDirectory,
+} from "./filesystem.js";
 
 export interface ApiContext {
   store: Store;
@@ -134,6 +141,17 @@ export async function handleApi(
       const body = await readJson(req);
       let cwd = String(body.cwd ?? ctx.primaryCwd);
       const isolate = ctx.store.settings.worktreeIsolation && (body.isolate !== false);
+
+      const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
+      const validation = await validateDirectory(cwd, roots);
+      if (!validation.allowed || !validation.exists || !validation.isDirectory || !validation.readable) {
+        return json(res, 400, {
+          error: validation.errorCode
+            ? `${validation.errorCode}: ${cwd}`
+            : `invalid workspace directory: ${cwd}`,
+          validation,
+        });
+      }
 
       const gitRoot = await isGitRepository(cwd);
       let worktreeInfo: { root: string; worktree: string; branch: string; isIsolated: boolean } = { root: cwd, worktree: cwd, branch: "", isIsolated: false };
@@ -363,6 +381,35 @@ export async function handleApi(
         const body = await readJson(req);
         return json(res, 200, ctx.store.setSettings(body));
       }
+    }
+
+    if (m === "GET" && url.pathname === "/api/filesystem/roots") {
+      const roots = await listRoots(ctx.primaryCwd, ctx.store);
+      return json(res, 200, { roots });
+    }
+
+    if (m === "GET" && url.pathname === "/api/filesystem/directories") {
+      const target = url.searchParams.get("path") ?? "";
+      const showHidden = url.searchParams.get("hidden") === "true";
+      const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
+      const listing = await listDirectories(target, roots, showHidden);
+      return json(res, listing.allowed ? 200 : listing.errorCode === "OUTSIDE_ALLOWED_ROOT" ? 403 : 404, listing);
+    }
+
+    if (m === "POST" && url.pathname === "/api/filesystem/validate-directory") {
+      const body = await readJson(req);
+      const target = String(body.path ?? "");
+      const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
+      const result = await validateDirectory(target, roots);
+      return json(res, result.allowed || result.errorCode === "PATH_NOT_FOUND" ? 200 : 400, result);
+    }
+
+    if (m === "POST" && url.pathname === "/api/filesystem/create-directory") {
+      const body = await readJson(req);
+      const target = String(body.path ?? "");
+      const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
+      const result = await createDirectory(target, roots);
+      return json(res, result.exists && result.isDirectory && result.allowed ? 200 : 400, result);
     }
 
     json(res, 404, { error: `not found: ${m} ${url.pathname}` });

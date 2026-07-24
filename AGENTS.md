@@ -67,3 +67,31 @@ Browser (React SPA)
 - `web/src/state.ts` — normalized store with selectors.
 - `web/src/ws.ts` — cursor-based WebSocket subscriptions.
 - `web/src/api.ts` — REST client for the new routes.
+- `server/src/filesystem.ts` — server-side path canonicalization, root restriction, and directory operations.
+- `web/src/components/WorkspacePathField.tsx` — path input with validation, recent dropdown, and Browse button.
+- `web/src/components/DirectoryPickerModal.tsx` — server-side directory browser modal.
+- `web/src/utils.ts` — `shortenPath` helper for readable path display.
+
+## Workspace path picker — verification
+
+```bash
+npm run typecheck    # both projects
+npm run test         # server + web tests
+npm run build        # dist/web + dist/server
+npm start            # production server on :7781
+```
+
+Then open `http://127.0.0.1:7781`, click **Browse…** in the New session area, and confirm:
+1. The directory picker lists only directories on the host (not the browser client).
+2. Paths outside the configured roots are rejected with an `OUTSIDE_ALLOWED_ROOT` / `SYMLINK_ESCAPE` error.
+3. The recent path dropdown shows basename + shortened path, and selecting a recent path updates the input.
+4. The **New session** button is enabled only when the selected path is a readable directory inside an allowed root.
+
+## Security limitations
+
+- Root confinement is enforced by `server/src/filesystem.ts` using realpath canonicalization and `path.relative` checks against allowed roots.
+- Symlinks are followed only when they resolve inside an allowed root; a symlink that escapes is rejected as `SYMLINK_ESCAPE`.
+- `DEVIN_REMOTE_WORKSPACE_ROOTS` overrides the root list at server startup; otherwise roots fall back to the server CWD and stored workspaces.
+- The server must run on a trusted host; the filesystem APIs give any authenticated web client the ability to list and create directories within allowed roots.
+- Hard links, bind mounts, and other kernel-level aliases can defeat pure path-string confinement; run the server with minimal privileges and restrict roots accordingly.
+- No browser-native file picker is used, so client-side path spoofing is not possible.

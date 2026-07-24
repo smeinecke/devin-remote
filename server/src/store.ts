@@ -164,10 +164,11 @@ export class Store {
   }
 
   addWorkspace(cwd: string) {
-    if (!this.data.workspaces.includes(cwd)) {
-      this.data.workspaces.push(cwd);
-      this.save();
-    }
+    const list = this.data.workspaces.filter((w) => w !== cwd);
+    list.unshift(cwd);
+    if (list.length > 20) list.length = 20;
+    this.data.workspaces = list;
+    this.save();
   }
 
   session(sessionId: string): SessionMetadata | undefined {

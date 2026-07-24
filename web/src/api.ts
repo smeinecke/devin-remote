@@ -1,5 +1,8 @@
 import type {
   ActiveOperation,
+  DirectoryListingResponse,
+  DirectoryValidationResponse,
+  FilesystemRoot,
   MaterializedSessionState,
   MetaResponse,
   PromptBlock,
@@ -95,6 +98,20 @@ export const api = {
     if (!res.ok) throw new Error(`upload failed → ${res.status}`);
     return (await res.json()) as UploadMeta;
   },
+
+  filesystemRoots: () => req<{ roots: FilesystemRoot[] }>("GET", "/api/filesystem/roots"),
+
+  listDirectories: (path: string, showHidden = false) => {
+    const q = new URLSearchParams({ path });
+    if (showHidden) q.set("hidden", "true");
+    return req<DirectoryListingResponse>("GET", `/api/filesystem/directories?${q.toString()}`);
+  },
+
+  validateDirectory: (path: string) =>
+    req<DirectoryValidationResponse>("POST", "/api/filesystem/validate-directory", { path }),
+
+  createDirectory: (path: string) =>
+    req<DirectoryValidationResponse>("POST", "/api/filesystem/create-directory", { path }),
 
   usage: () => req<UsageResponse>("GET", "/api/usage"),
 

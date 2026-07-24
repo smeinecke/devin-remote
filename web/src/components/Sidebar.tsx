@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { DevinLogo } from "./DevinLogo";
+import WorkspacePathField from "./WorkspacePathField";
+import type { DirectoryValidationResponse } from "../types";
 import {
   ChartColumnIcon,
   CheckIcon,
@@ -39,17 +41,26 @@ export function sessionLabel(s: SessionState): string {
 export default function Sidebar() {
   const state = useStore();
   const [cwdInput, setCwdInput] = useState("");
+  const [validation, setValidation] = useState<DirectoryValidationResponse | null>(null);
   const [filter, setFilter] = useState("");
   const [creating, setCreating] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
 
   const workspaces = useMemo(() => {
-    const set = new Set<string>();
-    for (const w of state.meta?.workspaces ?? []) set.add(w);
-    for (const s of Object.values(state.sessions)) if (s.cwd) set.add(s.cwd);
-    if (state.meta?.primaryCwd) set.add(state.meta.primaryCwd);
-    return [...set].sort();
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const push = (w: string | null | undefined) => {
+      if (!w) return;
+      const c = w.trim();
+      if (!c || seen.has(c)) return;
+      seen.add(c);
+      out.push(c);
+    };
+    if (state.meta?.primaryCwd) push(state.meta.primaryCwd);
+    for (const w of state.meta?.workspaces ?? []) push(w);
+    for (const s of Object.values(state.sessions)) push(s.cwd);
+    return out.slice(0, 15);
   }, [state.meta, state.sessions]);
 
   const sessions = useMemo(() => {
@@ -68,6 +79,13 @@ export default function Sidebar() {
       : all;
     return filtered.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
   }, [state.sessions, filter]);
+
+  const canCreate =
+    !creating &&
+    validation?.allowed &&
+    validation.exists &&
+    validation.isDirectory &&
+    validation.readable;
 
   const submitNew = async () => {
     const dir = cwdInput.trim() || state.meta?.primaryCwd || "";
@@ -109,32 +127,22 @@ export default function Sidebar() {
 
       {/* new session */}
       <div className="flex flex-none flex-col gap-2 px-3 pb-2">
-        <div className="flex gap-1.5">
-          <Input
-            id="dc-cwd-input"
-            className="tnum h-9 flex-1 border-transparent bg-secondary font-mono text-xs shadow-none focus-visible:border-input"
-            list="dc-workspaces"
-            placeholder={state.meta?.primaryCwd ?? "/path/to/workspace"}
-            value={cwdInput}
-            onChange={(e) => setCwdInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void submitNew();
-            }}
-          />
-          <datalist id="dc-workspaces">
-            {workspaces.map((w) => (
-              <option key={w} value={w} />
-            ))}
-          </datalist>
-          <button
-            className="flex h-9 flex-none items-center gap-1.5 rounded-lg bg-secondary px-3 text-sm font-medium text-secondary-foreground transition-all duration-150 hover:bg-accent active:scale-[0.98] disabled:opacity-50"
-            onClick={() => void submitNew()}
-            disabled={creating}
-          >
-            {creating ? <Loader2Icon className="size-4 animate-spin" /> : <PlusIcon className="size-4" />}
-            New session
-          </button>
-        </div>
+        <WorkspacePathField
+          value={cwdInput}
+          onChange={setCwdInput}
+          recentPaths={workspaces}
+          primaryCwd={state.meta?.primaryCwd}
+          disabled={creating}
+          onValidationChange={setValidation}
+        />
+        <button
+          className="flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground transition-all duration-150 hover:bg-primary/90 active:scale-[0.98] disabled:opacity-50"
+          onClick={() => void submitNew()}
+          disabled={!canCreate}
+        >
+          {creating ? <Loader2Icon className="size-4 animate-spin" /> : <PlusIcon className="size-4" />}
+          New session
+        </button>
         <div className="relative">
           <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
