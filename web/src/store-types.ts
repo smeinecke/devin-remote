@@ -52,7 +52,11 @@ export interface AgentRun {
   userMessageId: string;
   status: "running" | "waiting_for_permission" | "completed" | "cancelled" | "failed";
   startedAt: number;
+  /** Timestamp of the next user message, or null for the active run. */
+  endedAt?: number;
   completedAt?: number;
+  /** Tool-call IDs that belong to this run. */
+  toolCallIds: string[];
   activities: AgentActivity[];
   finalMessageId?: string;
   /** Rendered assistant text accumulated for this run (agent + thought chunks). */

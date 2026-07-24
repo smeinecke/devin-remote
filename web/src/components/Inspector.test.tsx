@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import Inspector, { ActivityItem } from "./Inspector";
 import { getState } from "../state";
 import { rebuildRuns } from "../runs";
+import { createSubagentActivity } from "../activity";
 import type { AgentActivity, SessionState, SubagentDescriptor, ToolCallState } from "../store-types";
 
 function subagentDescriptor(title: string, status: SubagentDescriptor["status"], overrides: Partial<SubagentDescriptor> = {}): SubagentDescriptor {
@@ -165,6 +166,57 @@ describe("ActivityItem", () => {
     const nested = container.querySelectorAll(".ml-2");
     expect(nested.length).toBeGreaterThan(0);
   });
+
+  it("auto-expands when the subagent becomes failed if the user has not manually changed", () => {
+    const running = activity({
+      title: "X",
+      status: "in_progress",
+      details: { subagent: subagentDescriptor("X", "running") },
+      autoExpand: false,
+    });
+    const { rerender } = render(<ActivityItem activity={running} />);
+    expect(screen.queryByText("Database connection refused")).toBeNull();
+
+    const failed = activity({
+      title: "X",
+      status: "failed",
+      details: { subagent: subagentDescriptor("X", "failed", { error: "Database connection refused" }) },
+      autoExpand: true,
+    });
+    rerender(<ActivityItem activity={failed} />);
+    expect(screen.getByText("Database connection refused")).not.toBeNull();
+  });
+
+  it("does not auto-expand after the user manually collapsed the card", () => {
+    const running = activity({
+      title: "X",
+      status: "in_progress",
+      details: { subagent: subagentDescriptor("X", "running", { prompt: "do work" }) },
+      autoExpand: false,
+    });
+    const { rerender, container } = render(<ActivityItem activity={running} />);
+    const button = screen.getByRole("button");
+    fireEvent.click(button); // expand
+    expect(container.querySelector(".rotate-90")).not.toBeNull();
+    fireEvent.click(button); // collapse manually
+    expect(container.querySelector(".rotate-90")).toBeNull();
+
+    const failed = activity({
+      title: "X",
+      status: "failed",
+      details: { subagent: subagentDescriptor("X", "failed", { error: "Database connection refused", prompt: "do work" }) },
+      autoExpand: true,
+    });
+    rerender(<ActivityItem activity={failed} />);
+    expect(container.querySelector(".rotate-90")).toBeNull();
+  });
+
+  it("falls back to a compact prompt preview when the subagent has no title", () => {
+    const sub = subagentDescriptor("", "running", { prompt: "npm test -- --runInBand" });
+    const act = { ...createSubagentActivity(sub), autoExpand: false };
+    render(<ActivityItem activity={act} />);
+    expect(screen.getByText("npm test -- --runInBand")).not.toBeNull();
+  });
 });
 
 describe("Inspector from normalized state", () => {
@@ -309,5 +361,38 @@ describe("Inspector from normalized state", () => {
     const { container } = render(<Inspector />);
     const nested = container.querySelectorAll(".ml-2");
     expect(nested.length).toBeGreaterThan(0);
+  });
+
+  it("does not show a previous run's subagent in the active run panel", () => {
+    const s = session({
+      status: "running",
+      timeline: [
+        { kind: "message", id: "user-a" },
+        { kind: "tool", id: "spawn-a" },
+        { kind: "message", id: "user-b" },
+      ],
+      messages: {
+        "user-a": { id: "user-a", role: "user", text: "first", attachments: [], streaming: false, ts: 1000 },
+        "user-b": { id: "user-b", role: "user", text: "second", attachments: [], streaming: false, ts: 5000 },
+      },
+      toolCalls: {
+        "spawn-a": toolCall({ id: "spawn-a", title: "Run subagent", kind: "run_subagent", startedAt: 2000 }),
+      },
+      subagents: {
+        "sub-a": subagentDescriptor("First run subagent", "completed", {
+          id: "sub-a",
+          parentToolCallId: "spawn-a",
+          result: "Done",
+          completedAt: 3000,
+          startedAt: 2000,
+        }),
+      },
+    });
+    setActiveSession(s);
+
+    const { container } = render(<Inspector />);
+    // The active (second) run has no tools/subagents, so it should not leak the first run's subagent.
+    expect(screen.queryByText("First run subagent")).toBeNull();
+    expect(container.textContent).toContain("0 activities");
   });
 });

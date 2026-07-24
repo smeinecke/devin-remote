@@ -132,6 +132,33 @@ function isTerminalStatus(status: string): boolean {
   return TERMINAL_SUBAGENT_STATUSES.has(status as any);
 }
 
+type TerminalSubagentStatus = "completed" | "failed" | "cancelled";
+
+interface CompletionOutcomeInput {
+  success?: boolean;
+  cancelled?: boolean;
+  summary?: string;
+  completedAt?: number;
+}
+
+function normalizeCompletionOutcome(input: CompletionOutcomeInput): {
+  status: TerminalSubagentStatus;
+  content: string | null;
+} {
+  const summary = input.summary ?? null;
+  const lower = (summary ?? "").toLowerCase();
+  let status: TerminalSubagentStatus;
+  if (input.cancelled) {
+    status = "cancelled";
+  } else if (input.success === false) {
+    status = lower.includes("cancel") || lower.includes("cancelled") ? "cancelled" : "failed";
+  } else {
+    status = "completed";
+  }
+  const content = summary && summary.trim() ? summary : null;
+  return { status, content };
+}
+
 function debug(...args: unknown[]) {
   if (process.env.DEBUG?.includes("subagent") || process.env.DEBUG_SUBAGENTS === "1") {
     console.log("[subagents]", ...args);
@@ -524,159 +551,161 @@ export class SubagentRegistry {
 
   private handleSubagentCompleted(
     agentId: string,
-    outcome: { success?: boolean; summary?: string },
+    outcome: CompletionOutcomeInput,
   ): NormalizedSubagentEvent | null {
-    const s = this.subagents.get(agentId);
     const now = Date.now();
-    if (!s) {
-      // Completion for a subagent we never saw start — create a minimal record.
-      const status = outcome.success === false ? "failed" : "completed";
-      const descriptor: SubagentDescriptor = {
-        id: agentId,
-        sessionId: this.sessionId,
-        processGeneration: this.processGeneration,
-        parentSubagentId: null,
-        parentToolCallId: null,
+    const completedAt = outcome.completedAt ?? now;
+    const incoming = normalizeCompletionOutcome(outcome);
+
+    const existing = this.subagents.get(agentId);
+    if (!existing) {
+      const descriptor = this.ensureSubagent(agentId, {
+        status: incoming.status,
+        result: incoming.status === "completed" ? incoming.content : null,
+        error: incoming.status !== "completed" ? incoming.content : null,
+        completedAt,
+        startedAt: null,
         title: `Subagent ${agentId.slice(0, 8)}`,
         prompt: null,
-        status,
-        startedAt: null,
-        completedAt: now,
-        result: outcome.success !== false ? (outcome.summary ?? null) : null,
-        error: outcome.success === false ? (outcome.summary ?? null) : null,
         profile: null,
+        parentSubagentId: null,
+        parentToolCallId: null,
         depth: 1,
         isBackground: true,
-        toolCallIds: [],
-        pendingPermissions: [],
-      };
-      this.subagents.set(agentId, descriptor);
-      if (status === "completed") {
-        return { type: "subagent_completed", subagentId: agentId, result: descriptor.result, completedAt: now };
+      });
+      return this.makeTerminalEvent(descriptor);
+    }
+
+    // Conflicting terminal statuses are immutable.
+    if (isTerminalStatus(existing.status)) {
+      if (existing.status !== incoming.status) {
+        debug("ignored conflicting completion", {
+          agentId: agentId.slice(0, 8),
+          existing: existing.status,
+          incoming: incoming.status,
+        });
+        return null;
       }
-      return {
-        type: "subagent_failed",
-        subagentId: agentId,
-        error: descriptor.error ?? "",
-        completedAt: now,
-        status: "failed",
-      };
+
+      const patch: Partial<SubagentDescriptor> = {};
+      if (incoming.status === "completed") {
+        if (!existing.result && incoming.content) {
+          existing.result = incoming.content;
+          patch.result = incoming.content;
+        }
+      } else {
+        if (!existing.error && incoming.content) {
+          existing.error = incoming.content;
+          patch.error = incoming.content;
+        }
+      }
+
+      if (Object.keys(patch).length === 0) {
+        debug("ignored duplicate completion", { agentId: agentId.slice(0, 8), status: existing.status });
+        return null;
+      }
+
+      this.subagents.set(agentId, existing);
+      return { type: "subagent_updated", subagentId: agentId, patch };
     }
 
     const before = {
-      status: s.status,
-      completedAt: s.completedAt,
-      result: s.result,
-      error: s.error,
+      status: existing.status,
+      result: existing.result,
+      error: existing.error,
+      completedAt: existing.completedAt,
     };
 
-    const summary = outcome.summary ?? null;
-    const currentlyTerminal = isTerminalStatus(s.status);
-
-    // Do not move from one terminal status to a different terminal status.
-    if (!currentlyTerminal || s.status === "waiting_for_permission") {
-      if (outcome.success) {
-        s.status = "completed";
-      } else {
-        const lower = (summary ?? "").toLowerCase();
-        s.status = lower.includes("cancel") || lower.includes("cancelled") ? "cancelled" : "failed";
-      }
-    }
-
-    // Fill missing authoritative details without moving the status backward.
-    if (s.status === "completed") {
-      if (summary && !s.result) s.result = summary;
-      if (s.error) s.error = null;
-    } else if (s.status === "failed" || s.status === "cancelled") {
-      if (summary && !s.error) s.error = summary;
-      if (s.result) s.result = null;
-    }
-
-    s.completedAt = s.completedAt ?? now;
+    existing.status = incoming.status;
+    existing.result = incoming.status === "completed" ? incoming.content : null;
+    existing.error = incoming.status !== "completed" ? incoming.content : null;
+    existing.completedAt = existing.completedAt ?? completedAt;
 
     const changed =
-      before.status !== s.status ||
-      before.completedAt !== s.completedAt ||
-      before.result !== s.result ||
-      before.error !== s.error;
+      before.status !== existing.status ||
+      before.result !== existing.result ||
+      before.error !== existing.error ||
+      before.completedAt !== existing.completedAt;
+    if (!changed) return null;
 
-    if (!changed) {
-      debug("ignored duplicate completion", { agentId: agentId.slice(0, 8), status: s.status });
-      return null;
-    }
-
-    this.subagents.set(agentId, s);
-    debug("subagent completed", { agentId: agentId.slice(0, 8), status: s.status, success: outcome.success });
-
-    if (s.status === "completed") {
-      return { type: "subagent_completed", subagentId: agentId, result: s.result, completedAt: s.completedAt };
-    }
-    if (s.status === "cancelled") {
-      return { type: "subagent_cancelled", subagentId: agentId, completedAt: s.completedAt };
-    }
-    return {
-      type: "subagent_failed",
-      subagentId: agentId,
-      error: s.error ?? "",
-      completedAt: s.completedAt,
-      status: "failed",
-    };
+    this.subagents.set(agentId, existing);
+    return this.makeTerminalEvent(existing);
   }
 
   private handleReadSubagentFallback(agentId: string, text: string): NormalizedSubagentEvent | null {
-    const s = this.subagents.get(agentId);
     const now = Date.now();
-    if (!s) {
-      const descriptor: SubagentDescriptor = {
-        id: agentId,
-        sessionId: this.sessionId,
-        processGeneration: this.processGeneration,
-        parentSubagentId: null,
-        parentToolCallId: null,
-        title: `Subagent ${agentId.slice(0, 8)}`,
-        prompt: null,
+    const existing = this.subagents.get(agentId);
+    if (!existing) {
+      const descriptor = this.ensureSubagent(agentId, {
         status: "completed",
-        startedAt: null,
-        completedAt: now,
         result: text,
         error: null,
+        completedAt: now,
+        startedAt: null,
+        title: `Subagent ${agentId.slice(0, 8)}`,
+        prompt: null,
         profile: null,
+        parentSubagentId: null,
+        parentToolCallId: null,
         depth: 1,
         isBackground: true,
-        toolCallIds: [],
-        pendingPermissions: [],
-      };
-      this.subagents.set(agentId, descriptor);
+      });
       return { type: "subagent_completed", subagentId: agentId, result: text, completedAt: now };
     }
 
-    const before = {
-      status: s.status,
-      completedAt: s.completedAt,
-      result: s.result,
-      error: s.error,
-    };
-
-    if (!isTerminalStatus(s.status)) {
-      s.completedAt = s.completedAt ?? now;
-      s.status = "completed";
-      if (s.error) s.error = null;
-    }
-    if (text && !s.result) s.result = text;
-
-    const changed =
-      before.status !== s.status ||
-      before.completedAt !== s.completedAt ||
-      before.result !== s.result ||
-      before.error !== s.error;
-
-    if (!changed) {
-      debug("ignored duplicate read_subagent fallback", { agentId: agentId.slice(0, 8) });
+    if (isTerminalStatus(existing.status)) {
+      if (existing.status !== "completed") {
+        debug("ignored read_subagent fallback for non-completed subagent", {
+          agentId: agentId.slice(0, 8),
+          status: existing.status,
+        });
+        return null;
+      }
+      if (!existing.result && text) {
+        existing.result = text;
+        this.subagents.set(agentId, existing);
+        return { type: "subagent_updated", subagentId: agentId, patch: { result: text } };
+      }
       return null;
     }
 
-    this.subagents.set(agentId, s);
-    return { type: "subagent_completed", subagentId: agentId, result: s.result, completedAt: s.completedAt ?? now };
+    const before = {
+      status: existing.status,
+      result: existing.result,
+      error: existing.error,
+      completedAt: existing.completedAt,
+    };
+
+    existing.status = "completed";
+    existing.result = text;
+    if (existing.error) existing.error = null;
+    existing.completedAt = existing.completedAt ?? now;
+
+    const changed =
+      before.status !== existing.status ||
+      before.result !== existing.result ||
+      before.error !== existing.error ||
+      before.completedAt !== existing.completedAt;
+    if (!changed) return null;
+
+    this.subagents.set(agentId, existing);
+    return { type: "subagent_completed", subagentId: agentId, result: existing.result, completedAt: existing.completedAt ?? now };
+  }
+
+  private makeTerminalEvent(s: SubagentDescriptor): NormalizedSubagentEvent {
+    if (s.status === "completed") {
+      return { type: "subagent_completed", subagentId: s.id, result: s.result, completedAt: s.completedAt ?? Date.now() };
+    }
+    if (s.status === "cancelled") {
+      return { type: "subagent_cancelled", subagentId: s.id, completedAt: s.completedAt ?? Date.now() };
+    }
+    return {
+      type: "subagent_failed",
+      subagentId: s.id,
+      error: s.error ?? "",
+      completedAt: s.completedAt ?? Date.now(),
+      status: s.status as "failed" | "cancelled",
+    };
   }
 
   private matchPendingSpawn(

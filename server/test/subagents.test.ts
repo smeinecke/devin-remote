@@ -378,7 +378,7 @@ describe("SubagentRegistry idempotent completion", () => {
     const duplicate = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "filled result"));
 
     assert.equal(first?.type, "subagent_completed");
-    assert.equal(filled?.type, "subagent_completed");
+    assert.equal(filled?.type, "subagent_updated");
     assert.equal(duplicate, null);
     assert.equal(registry.get("a1")?.result, "filled result");
   });
@@ -391,5 +391,125 @@ describe("SubagentRegistry idempotent completion", () => {
 
     assert.equal(again, null);
     assert.equal(registry.get("a1")?.status, "completed");
+  });
+});
+
+function readSubagentUpdate(agentId: string, toolCallId: string, text: string) {
+  return {
+    sessionUpdate: "tool_call_update",
+    toolCallId,
+    status: "completed",
+    rawInput: { agent_id: agentId, block: true, timeout: 60 },
+    content: [{ content: { text, type: "text" }, type: "content" }],
+    _meta: { "cognition.ai/inferenceToolName": "read_subagent" },
+  };
+}
+
+describe("SubagentRegistry terminal lifecycle conflicts", () => {
+  it("fills a completed result via read_subagent fallback", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "List files", "list files"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, null));
+
+    const backfill = registry.processUpdate(readSubagentUpdate("a1", "functions.read_subagent:0", "68 files found"));
+    assert.equal(backfill?.type, "subagent_updated");
+    assert.equal((backfill as { patch?: { result?: string | null } } | undefined)?.patch?.result, "68 files found");
+    assert.equal(registry.get("a1")?.status, "completed");
+    assert.equal(registry.get("a1")?.result, "68 files found");
+    assert.equal(registry.get("a1")?.error, null);
+  });
+
+  it("ignores read_subagent fallback result when it was already set", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "List files", "list files"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "first result"));
+
+    const backfill = registry.processUpdate(readSubagentUpdate("a1", "functions.read_subagent:0", "second result"));
+    assert.equal(backfill, null);
+    assert.equal(registry.get("a1")?.result, "first result");
+  });
+
+  it("does not emit completion for a failed subagent via read_subagent fallback", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "List files", "list files"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "Database connection refused"));
+
+    const backfill = registry.processUpdate(readSubagentUpdate("a1", "functions.read_subagent:0", "68 files found"));
+    assert.equal(backfill, null);
+    assert.equal(registry.get("a1")?.status, "failed");
+    assert.equal(registry.get("a1")?.result, null);
+    assert.equal(registry.get("a1")?.error, "Database connection refused");
+  });
+
+  it("does not emit completion for a cancelled subagent via read_subagent fallback", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "List files", "list files"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "cancelled by user"));
+
+    const backfill = registry.processUpdate(readSubagentUpdate("a1", "functions.read_subagent:0", "recovered"));
+    assert.equal(backfill, null);
+    assert.equal(registry.get("a1")?.status, "cancelled");
+    assert.equal(registry.get("a1")?.result, null);
+    assert.equal(registry.get("a1")?.error, "cancelled by user");
+  });
+
+  it("ignores a late success completion for an already failed subagent", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "Database connection refused"));
+
+    const late = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "recovered"));
+    assert.equal(late, null);
+    assert.equal(registry.get("a1")?.status, "failed");
+    assert.equal(registry.get("a1")?.result, null);
+    assert.equal(registry.get("a1")?.error, "Database connection refused");
+  });
+
+  it("ignores a late failure completion for an already completed subagent", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "done"));
+
+    const late = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "Database connection refused"));
+    assert.equal(late, null);
+    assert.equal(registry.get("a1")?.status, "completed");
+    assert.equal(registry.get("a1")?.result, "done");
+    assert.equal(registry.get("a1")?.error, null);
+  });
+
+  it("fills a missing failed error on a second matching failure", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, null));
+
+    const filled = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "Database connection refused"));
+    assert.equal(filled?.type, "subagent_updated");
+    assert.equal(registry.get("a1")?.status, "failed");
+    assert.equal(registry.get("a1")?.error, "Database connection refused");
+    assert.equal(registry.get("a1")?.result, null);
+  });
+
+  it("does not put a successful summary into error", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, null));
+
+    const late = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "I fixed it"));
+    assert.equal(late, null);
+    assert.equal(registry.get("a1")?.status, "failed");
+    assert.equal(registry.get("a1")?.error, null);
+    assert.equal(registry.get("a1")?.result, null);
+  });
+
+  it("does not put a failed summary into result", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, null));
+
+    const late = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "Database connection refused"));
+    assert.equal(late, null);
+    assert.equal(registry.get("a1")?.status, "completed");
+    assert.equal(registry.get("a1")?.result, null);
+    assert.equal(registry.get("a1")?.error, null);
   });
 });

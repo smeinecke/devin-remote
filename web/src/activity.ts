@@ -11,6 +11,20 @@ function debug(...args: unknown[]) {
   }
 }
 
+export interface RunActivityContext {
+  runId: string;
+  toolCallIds: string[];
+  toolSet: Set<string>;
+  toolOrder: Map<string, number>;
+  startedAt: number;
+  endedAt: number | null;
+  isCurrentRun: boolean;
+}
+
+export function isTerminalSubagentStatus(status: SubagentDescriptor["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
 export function subagentStatusToActivity(status: SubagentDescriptor["status"]): AgentActivity["status"] {
   switch (status) {
     case "completed":
@@ -60,6 +74,13 @@ function inferActivityType(tool: ToolCallState): AgentActivity["type"] {
   return "command";
 }
 
+function compactPreview(s: string | null | undefined, max = 80): string {
+  if (!s) return "";
+  const first = s.split(/\r?\n/)[0].trim();
+  if (first.length <= max) return first;
+  return first.slice(0, max - 1) + "…";
+}
+
 export function createToolActivity(tool: ToolCallState): AgentActivity {
   const meta: AgentActivity["meta"] = {};
   for (const c of tool.content ?? []) {
@@ -86,12 +107,12 @@ export function createToolActivity(tool: ToolCallState): AgentActivity {
 }
 
 export function createSubagentActivity(subagent: SubagentDescriptor): AgentActivity {
-  const title = subagent.title ?? `Subagent ${subagent.id.slice(0, 8)}`;
+  const label = subagent.title?.trim() || compactPreview(subagent.prompt, 80) || "Delegated task";
   const status = subagentStatusToActivity(subagent.status);
   return {
     id: subagent.id,
     type: "subagent",
-    title,
+    title: label,
     status,
     startedAt: subagent.startedAt ?? 0,
     completedAt: subagent.completedAt ?? undefined,
@@ -115,73 +136,40 @@ function sortActivities(activities: AgentActivity[]): AgentActivity[] {
   });
 }
 
-function findSubagentIndex(subagent: SubagentDescriptor, runToolIds: string[]): number {
+function findSubagentIndex(subagent: SubagentDescriptor | undefined, toolOrder: Map<string, number>): number {
+  if (!subagent) return -1;
   let first = Infinity;
   if (subagent.parentToolCallId) {
-    const idx = runToolIds.indexOf(subagent.parentToolCallId);
-    if (idx >= 0) first = Math.min(first, idx);
+    const idx = toolOrder.get(subagent.parentToolCallId);
+    if (idx !== undefined) first = Math.min(first, idx);
   }
   for (const tcid of subagent.toolCallIds) {
-    const idx = runToolIds.indexOf(tcid);
-    if (idx >= 0) first = Math.min(first, idx);
+    const idx = toolOrder.get(tcid);
+    if (idx !== undefined) first = Math.min(first, idx);
   }
   return first === Infinity ? -1 : first;
-}
-
-function collectRelevantSubagentIds(runToolIds: string[], session: SessionState): Set<string> {
-  const runToolSet = new Set(runToolIds);
-  const subagentMap = session.subagents ?? {};
-  const relevant = new Set<string>();
-
-  for (const subagent of Object.values(subagentMap)) {
-    if (subagent.parentToolCallId && runToolSet.has(subagent.parentToolCallId)) {
-      relevant.add(subagent.id);
-    }
-    for (const tcid of subagent.toolCallIds) {
-      if (runToolSet.has(tcid)) {
-        relevant.add(subagent.id);
-        break;
-      }
-    }
-  }
-
-  // If the run has no tool entries yet, surface all known subagents.
-  if (runToolSet.size === 0) {
-    for (const subagent of Object.values(subagentMap)) {
-      relevant.add(subagent.id);
-    }
-  }
-
-  // Include ancestors so nested hierarchy can be reconstructed.
-  for (const id of new Set(relevant)) {
-    let cur: string | null = subagentMap[id]?.parentSubagentId ?? null;
-    while (cur && subagentMap[cur] && !relevant.has(cur)) {
-      relevant.add(cur);
-      cur = subagentMap[cur].parentSubagentId;
-    }
-  }
-
-  return relevant;
 }
 
 /**
  * Build the Activity hierarchy for a single run from normalized session state.
  *
- * - One subagent activity per normalized descriptor.
- * - Tool calls are attached to their owning subagent via `toolCall.subagentId`.
- * - Subagent nesting follows `parentSubagentId`.
+ * - `relevantSubagentIds` is the precomputed set of subagents that belong to this run.
+ * - Tool calls are attached to their owning subagent only when the tool is part of this run.
+ * - Subagent nesting follows `parentSubagentId` within this run.
  * - Spawning `run_subagent` tool calls are suppressed in favor of the subagent card.
  * - Cycles and missing parents are broken safely.
  */
-export function buildRunActivities(runToolIds: string[], session: SessionState): AgentActivity[] {
+export function buildRunActivities(
+  context: RunActivityContext,
+  session: SessionState,
+  relevantSubagentIds: Set<string>,
+): AgentActivity[] {
   const subagentMap = session.subagents ?? {};
   const toolCallMap = session.toolCalls ?? {};
 
-  const relevant = collectRelevantSubagentIds(runToolIds, session);
-
   // Step 1: create one Activity node per relevant descriptor.
   const subagentById = new Map<string, AgentActivity>();
-  for (const id of relevant) {
+  for (const id of relevantSubagentIds) {
     const subagent = subagentMap[id];
     if (!subagent) continue;
     if (subagentById.has(id)) {
@@ -191,30 +179,31 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
     subagentById.set(id, createSubagentActivity(subagent));
   }
 
-  // Step 2: identify tools represented by subagents.
-  const representedSpawnToolIds = new Set<string>(
-    Object.values(subagentMap)
-      .map((s) => s.parentToolCallId)
-      .filter((id): id is string => Boolean(id)),
-  );
+  // Step 2: identify tools represented by subagents for this run.
+  const representedSpawnToolIds = new Set<string>();
+  for (const id of relevantSubagentIds) {
+    const ptid = subagentMap[id]?.parentToolCallId;
+    if (ptid && context.toolSet.has(ptid)) representedSpawnToolIds.add(ptid);
+  }
 
   const representedToolIds = new Set<string>(representedSpawnToolIds);
-  for (const id of relevant) representedToolIds.add(id);
+  for (const id of relevantSubagentIds) representedToolIds.add(id);
 
-  // Map owned tool calls to their subagent.
+  // Map owned tool calls within this run to their subagent.
   const toolsBySubagent = new Map<string, ToolCallState[]>();
-  for (const tool of Object.values(toolCallMap)) {
+  for (const toolId of context.toolCallIds) {
+    const tool = toolCallMap[toolId];
     if (!tool) continue;
     if (representedToolIds.has(tool.id)) continue;
     const sid = tool.subagentId;
-    if (sid && relevant.has(sid)) {
+    if (sid && relevantSubagentIds.has(sid)) {
       const arr = toolsBySubagent.get(sid) ?? [];
       arr.push(tool);
       toolsBySubagent.set(sid, arr);
     }
   }
 
-  // Attach owned tools to subagent nodes.
+  // Attach owned tools to subagent nodes, limited to tools in this run.
   for (const [sid, activity] of subagentById) {
     const subagent = subagentMap[sid];
     if (!subagent) continue;
@@ -227,6 +216,7 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
     }
     for (const tcid of subagent.toolCallIds) {
       if (tcid === sid || seen.has(tcid)) continue;
+      if (!context.toolSet.has(tcid)) continue;
       const tc = toolCallMap[tcid];
       if (tc && !representedToolIds.has(tc.id)) {
         seen.add(tc.id);
@@ -236,12 +226,12 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
     activity.children = sortActivities(tools.map(createToolActivity));
   }
 
-  // Step 3: build parent/child relationships with cycle detection.
+  // Step 3: build parent/child relationships with cycle detection within this run.
   const cycleNodes = new Set<string>();
-  for (const id of relevant) {
+  for (const id of relevantSubagentIds) {
     const path = new Set<string>();
     let cur: string | null = id;
-    while (cur && relevant.has(cur)) {
+    while (cur && relevantSubagentIds.has(cur)) {
       if (path.has(cur)) {
         let c: string | null = cur;
         do {
@@ -256,9 +246,9 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
   }
 
   const parentFor = new Map<string, string | null>();
-  for (const id of relevant) {
+  for (const id of relevantSubagentIds) {
     const parentId = subagentMap[id]?.parentSubagentId ?? null;
-    if (parentId && relevant.has(parentId) && !cycleNodes.has(id)) {
+    if (parentId && relevantSubagentIds.has(parentId) && !cycleNodes.has(id)) {
       parentFor.set(id, parentId);
     } else {
       parentFor.set(id, null);
@@ -266,7 +256,7 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
   }
 
   const childrenByParent = new Map<string, AgentActivity[]>();
-  for (const id of relevant) {
+  for (const id of relevantSubagentIds) {
     const parentId = parentFor.get(id);
     if (parentId) {
       const children = childrenByParent.get(parentId) ?? [];
@@ -277,8 +267,6 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
   }
 
   const built = new Set<string>();
-  const rootSubagents: AgentActivity[] = [];
-
   function buildNode(id: string): AgentActivity | null {
     if (built.has(id)) return subagentById.get(id) ?? null;
     const node = subagentById.get(id);
@@ -292,7 +280,7 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
     return node;
   }
 
-  const rootIds = [...relevant]
+  const rootIds = [...relevantSubagentIds]
     .filter((id) => !parentFor.get(id))
     .sort((a, b) => {
       const sa = subagentMap[a];
@@ -304,29 +292,19 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
     });
 
   for (const id of rootIds) {
-    const node = buildNode(id);
-    if (node) rootSubagents.push(node);
+    buildNode(id);
   }
 
   // Diagnostics.
-  for (const id of relevant) {
+  for (const id of relevantSubagentIds) {
     const subagent = subagentMap[id];
     const parentId = subagent?.parentSubagentId;
-    if (parentId && !relevant.has(parentId)) {
-      debug("missing parent descriptor", { subagentId: id.slice(0, 8), parentId: parentId.slice(0, 8) });
-    }
-  }
-  const seenDescriptorIds = new Set<string>();
-  for (const subagent of Object.values(subagentMap)) {
-    if (seenDescriptorIds.has(subagent.id)) {
-      debug("duplicate descriptor id", { subagentId: subagent.id.slice(0, 8) });
-    } else {
-      seenDescriptorIds.add(subagent.id);
-    }
-  }
-  for (const [sid, tools] of toolsBySubagent) {
-    if (!relevant.has(sid)) {
-      debug("tool referencing unknown subagent", { toolCount: tools.length, subagentId: sid.slice(0, 8) });
+    if (parentId && !relevantSubagentIds.has(parentId) && subagentMap[parentId]) {
+      debug("missing parent descriptor in run", {
+        runId: context.runId.slice(0, 8),
+        subagentId: id.slice(0, 8),
+        parentId: parentId.slice(0, 8),
+      });
     }
   }
 
@@ -342,9 +320,9 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
   }
 
   const firstIndexBySubagent = new Map<string, number>();
-  for (const id of relevant) {
+  for (const id of relevantSubagentIds) {
     if (parentFor.get(id)) continue;
-    const idx = findSubagentIndex(subagentMap[id], runToolIds);
+    const idx = findSubagentIndex(subagentMap[id], context.toolOrder);
     if (idx >= 0) firstIndexBySubagent.set(id, idx);
   }
 
@@ -355,14 +333,15 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
     subagentsAtIndex.set(idx, arr);
   }
 
-  for (let i = 0; i < runToolIds.length; i++) {
-    const toolId = runToolIds[i];
+  for (let i = 0; i < context.toolCallIds.length; i++) {
+    const toolId = context.toolCallIds[i];
 
     // Emit a subagent spawned at this tool call.
     if (representedSpawnToolIds.has(toolId)) {
-      for (const subagent of Object.values(subagentMap)) {
-        if (subagent.parentToolCallId === toolId && relevant.has(subagent.id) && !parentFor.get(subagent.id)) {
-          emitSubagentRoot(subagent.id);
+      for (const id of relevantSubagentIds) {
+        const subagent = subagentMap[id];
+        if (subagent?.parentToolCallId === toolId && !parentFor.get(id)) {
+          emitSubagentRoot(id);
         }
       }
     }
@@ -376,18 +355,16 @@ export function buildRunActivities(runToolIds: string[], session: SessionState):
     if (representedToolIds.has(toolId)) continue;
     const tool = toolCallMap[toolId];
     if (!tool) continue;
-    if (tool.subagentId && relevant.has(tool.subagentId)) continue;
+    if (tool.subagentId && relevantSubagentIds.has(tool.subagentId)) continue;
     result.push(createToolActivity(tool));
   }
 
   // Append any remaining top-level subagents (orphans or snapshot artifacts).
-  const remainingRootIds = [...relevant]
+  const remainingRootIds = [...relevantSubagentIds]
     .filter((id) => !parentFor.get(id) && !emittedSubagent.has(id))
     .sort((a, b) => {
-      const sa = subagentMap[a];
-      const sb = subagentMap[b];
-      const ta = sa?.startedAt ?? 0;
-      const tb = sb?.startedAt ?? 0;
+      const ta = subagentMap[a]?.startedAt ?? 0;
+      const tb = subagentMap[b]?.startedAt ?? 0;
       if (ta !== tb) return ta - tb;
       return a.localeCompare(b);
     });

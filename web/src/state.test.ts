@@ -168,4 +168,86 @@ describe("frontend subagent + permission state", () => {
     expect(s.processGeneration).toBe(2);
     expect(s.permissions).toEqual([]);
   });
+
+  it("merges a subagent result backfill via subagent_updated", () => {
+    const session = makeSession("s1", 1);
+    session.subagents = {
+      "sub-a": {
+        id: "sub-a",
+        sessionId: "s1",
+        processGeneration: 1,
+        parentSubagentId: null,
+        parentToolCallId: null,
+        title: "List files",
+        prompt: "list files",
+        status: "completed",
+        startedAt: 1000,
+        completedAt: 2000,
+        result: null,
+        error: null,
+        profile: null,
+        depth: 1,
+        isBackground: false,
+        toolCallIds: [],
+        pendingPermissions: [],
+      } satisfies SubagentDescriptor,
+    };
+    setSession(session);
+
+    dispatchEvent({
+      type: "event",
+      sessionId: "s1",
+      processGeneration: 1,
+      sequence: 1,
+      timestamp: Date.now(),
+      eventType: "subagent_updated",
+      payload: { subagentId: "sub-a", patch: { result: "68 files found" } },
+    });
+
+    const s = getState().sessions.s1;
+    expect(s.subagents["sub-a"].result).toBe("68 files found");
+    expect(s.subagents["sub-a"].completedAt).toBe(2000);
+    expect(s.subagents["sub-a"].error).toBeNull();
+  });
+
+  it("does not overwrite a completed subagent result with a conflicting failure event", () => {
+    const session = makeSession("s1", 1);
+    session.subagents = {
+      "sub-a": {
+        id: "sub-a",
+        sessionId: "s1",
+        processGeneration: 1,
+        parentSubagentId: null,
+        parentToolCallId: null,
+        title: "List files",
+        prompt: "list files",
+        status: "completed",
+        startedAt: 1000,
+        completedAt: 2000,
+        result: "done",
+        error: null,
+        profile: null,
+        depth: 1,
+        isBackground: false,
+        toolCallIds: [],
+        pendingPermissions: [],
+      } satisfies SubagentDescriptor,
+    };
+    setSession(session);
+
+    dispatchEvent({
+      type: "event",
+      sessionId: "s1",
+      processGeneration: 1,
+      sequence: 1,
+      timestamp: Date.now(),
+      eventType: "subagent_failed",
+      payload: { subagentId: "sub-a", error: "Database connection refused", completedAt: 3000 },
+    });
+
+    const s = getState().sessions.s1;
+    expect(s.subagents["sub-a"].status).toBe("completed");
+    expect(s.subagents["sub-a"].result).toBe("done");
+    expect(s.subagents["sub-a"].error).toBeNull();
+  });
 });

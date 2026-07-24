@@ -17,6 +17,7 @@ import type {
 } from "./store-types";
 import { mentionToUri, extractMentions, randomUUID } from "./utils";
 import { rebuildRuns } from "./runs";
+import { isTerminalSubagentStatus } from "./activity";
 import type {
   SubagentDescriptor,
   MetaResponse,
@@ -868,6 +869,7 @@ function applySubagentDescriptor(d: SessionState, subagent: SubagentDescriptor):
     };
   }
   for (const tcId of subagent.toolCallIds) {
+    if (tcId === subagent.id) continue;
     const tc = nextToolCalls[tcId];
     if (tc && tc.subagentId !== subagent.id) {
       nextToolCalls[tcId] = { ...tc, subagentId: subagent.id };
@@ -987,7 +989,13 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       const p = payload as { subagentId: string; result: string | null; completedAt: number };
       updateSession(sessionId, (d) => {
         const existing = d.subagents[p.subagentId];
-        if (existing && existing.completedAt && existing.status === "completed") return;
+        if (existing && isTerminalSubagentStatus(existing.status)) {
+          if (existing.status !== "completed") return;
+          if (!existing.result && p.result) {
+            applySubagentDescriptor(d, { ...existing, result: p.result });
+          }
+          return;
+        }
         const next: SubagentDescriptor = {
           ...(existing ?? {
             id: p.subagentId,
@@ -1017,9 +1025,15 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       const p = payload as { subagentId: string; error: string; completedAt: number; status?: "failed" | "cancelled" };
       updateSession(sessionId, (d) => {
         const existing = d.subagents[p.subagentId];
-        if (existing && existing.completedAt && (existing.status === "failed" || existing.status === "cancelled")) return;
         const lower = p.error.toLowerCase();
         const status = p.status ?? (lower.includes("cancel") || lower.includes("cancelled") ? "cancelled" : "failed");
+        if (existing && isTerminalSubagentStatus(existing.status)) {
+          if (existing.status !== status) return;
+          if (!existing.error && p.error) {
+            applySubagentDescriptor(d, { ...existing, error: p.error });
+          }
+          return;
+        }
         const next: SubagentDescriptor = {
           ...(existing ?? {
             id: p.subagentId,
@@ -1038,7 +1052,7 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
             pendingPermissions: [],
           }),
           status,
-          error: p.error,
+          error: existing?.error ?? p.error,
           completedAt: existing?.completedAt ?? p.completedAt,
         };
         applySubagentDescriptor(d, next);
@@ -1049,7 +1063,10 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       const p = payload as { subagentId: string; completedAt: number };
       updateSession(sessionId, (d) => {
         const existing = d.subagents[p.subagentId];
-        if (existing && existing.completedAt && existing.status === "cancelled") return;
+        if (existing && isTerminalSubagentStatus(existing.status)) {
+          if (existing.status !== "cancelled") return;
+          return;
+        }
         const next: SubagentDescriptor = {
           ...(existing ?? {
             id: p.subagentId,

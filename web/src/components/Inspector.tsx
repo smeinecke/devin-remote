@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { setUi, useStore } from "../state";
 import type { AgentActivity, SubagentDescriptor } from "../store-types";
@@ -121,11 +121,23 @@ function subagentSummary(activity: AgentActivity): string | null {
 
 function ActivityItem({ activity, depth = 0 }: { activity: AgentActivity; depth?: number }) {
   const [expanded, setExpanded] = useState(activity.autoExpand ?? false);
+  const manuallyChanged = useRef(false);
   const isSubagent = activity.type === "subagent";
   const hasChildren = (activity.children?.length ?? 0) > 0;
   const subagent = (activity.details as { subagent?: SubagentDescriptor } | undefined)?.subagent;
   const summary = subagentSummary(activity);
   const canExpand = hasChildren || !!subagent?.prompt || !!subagent?.result || !!subagent?.error || activity.meta?.command || activity.meta?.path;
+
+  useEffect(() => {
+    if (!manuallyChanged.current && activity.autoExpand) {
+      setExpanded(true);
+    }
+  }, [activity.autoExpand]);
+
+  const toggleExpanded = () => {
+    manuallyChanged.current = true;
+    setExpanded((e) => !e);
+  };
 
   return (
     <div
@@ -141,7 +153,7 @@ function ActivityItem({ activity, depth = 0 }: { activity: AgentActivity; depth?
         type="button"
         disabled={!canExpand}
         aria-label={isSubagent ? `Subagent: ${activity.title}` : activity.title}
-        onClick={() => setExpanded((e) => !e)}
+        onClick={toggleExpanded}
         className={cn(
           "flex w-full min-w-0 items-center gap-2 text-left",
           canExpand && "cursor-pointer",
