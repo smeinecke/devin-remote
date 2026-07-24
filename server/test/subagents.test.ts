@@ -450,7 +450,7 @@ describe("SubagentRegistry terminal lifecycle conflicts", () => {
     assert.equal(backfill, null);
     assert.equal(registry.get("a1")?.status, "cancelled");
     assert.equal(registry.get("a1")?.result, null);
-    assert.equal(registry.get("a1")?.error, "cancelled by user");
+    assert.equal(registry.get("a1")?.error, null);
   });
 
   it("ignores a late success completion for an already failed subagent", () => {
@@ -511,5 +511,23 @@ describe("SubagentRegistry terminal lifecycle conflicts", () => {
     assert.equal(registry.get("a1")?.status, "completed");
     assert.equal(registry.get("a1")?.result, null);
     assert.equal(registry.get("a1")?.error, null);
+  });
+
+  it("does not store a cancellation summary as an error or result payload", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+
+    const completed = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "cancelled by user"));
+    assert.equal(completed?.type, "subagent_cancelled");
+    assert.equal(registry.get("a1")?.status, "cancelled");
+    assert.equal(registry.get("a1")?.result, null);
+    assert.equal(registry.get("a1")?.error, null);
+  });
+
+  it("does not invent a completed subagent from a read_subagent fallback for an unknown agent", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    const backfill = registry.processUpdate(readSubagentUpdate("a1", "functions.read_subagent:0", "recovered"));
+    assert.equal(backfill, null);
+    assert.equal(registry.get("a1"), undefined);
   });
 });

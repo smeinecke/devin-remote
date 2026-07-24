@@ -49,6 +49,11 @@ export type NormalizedSubagentEvent =
       completedAt: number;
     };
 
+type SubagentMutation =
+  | { kind: "lifecycle"; descriptor: SubagentDescriptor; event: NormalizedSubagentEvent }
+  | { kind: "update"; descriptor: SubagentDescriptor; patch: Partial<SubagentDescriptor>; event: NormalizedSubagentEvent }
+  | { kind: "none" };
+
 const TERMINAL_SUBAGENT_STATUSES = new Set([
   "completed",
   "failed",
@@ -556,140 +561,20 @@ export class SubagentRegistry {
     const now = Date.now();
     const completedAt = outcome.completedAt ?? now;
     const incoming = normalizeCompletionOutcome(outcome);
-
     const existing = this.subagents.get(agentId);
-    if (!existing) {
-      const descriptor = this.ensureSubagent(agentId, {
-        status: incoming.status,
-        result: incoming.status === "completed" ? incoming.content : null,
-        error: incoming.status !== "completed" ? incoming.content : null,
-        completedAt,
-        startedAt: null,
-        title: `Subagent ${agentId.slice(0, 8)}`,
-        prompt: null,
-        profile: null,
-        parentSubagentId: null,
-        parentToolCallId: null,
-        depth: 1,
-        isBackground: true,
-      });
-      return this.makeTerminalEvent(descriptor);
-    }
-
-    // Conflicting terminal statuses are immutable.
-    if (isTerminalStatus(existing.status)) {
-      if (existing.status !== incoming.status) {
-        debug("ignored conflicting completion", {
-          agentId: agentId.slice(0, 8),
-          existing: existing.status,
-          incoming: incoming.status,
-        });
-        return null;
-      }
-
-      const patch: Partial<SubagentDescriptor> = {};
-      if (incoming.status === "completed") {
-        if (!existing.result && incoming.content) {
-          existing.result = incoming.content;
-          patch.result = incoming.content;
-        }
-      } else {
-        if (!existing.error && incoming.content) {
-          existing.error = incoming.content;
-          patch.error = incoming.content;
-        }
-      }
-
-      if (Object.keys(patch).length === 0) {
-        debug("ignored duplicate completion", { agentId: agentId.slice(0, 8), status: existing.status });
-        return null;
-      }
-
-      this.subagents.set(agentId, existing);
-      return { type: "subagent_updated", subagentId: agentId, patch };
-    }
-
-    const before = {
-      status: existing.status,
-      result: existing.result,
-      error: existing.error,
-      completedAt: existing.completedAt,
-    };
-
-    existing.status = incoming.status;
-    existing.result = incoming.status === "completed" ? incoming.content : null;
-    existing.error = incoming.status !== "completed" ? incoming.content : null;
-    existing.completedAt = existing.completedAt ?? completedAt;
-
-    const changed =
-      before.status !== existing.status ||
-      before.result !== existing.result ||
-      before.error !== existing.error ||
-      before.completedAt !== existing.completedAt;
-    if (!changed) return null;
-
-    this.subagents.set(agentId, existing);
-    return this.makeTerminalEvent(existing);
+    const mutation = this.planCompletionMutation(agentId, existing, incoming, completedAt);
+    return this.commitMutation(agentId, mutation);
   }
 
   private handleReadSubagentFallback(agentId: string, text: string): NormalizedSubagentEvent | null {
-    const now = Date.now();
     const existing = this.subagents.get(agentId);
     if (!existing) {
-      const descriptor = this.ensureSubagent(agentId, {
-        status: "completed",
-        result: text,
-        error: null,
-        completedAt: now,
-        startedAt: null,
-        title: `Subagent ${agentId.slice(0, 8)}`,
-        prompt: null,
-        profile: null,
-        parentSubagentId: null,
-        parentToolCallId: null,
-        depth: 1,
-        isBackground: true,
-      });
-      return { type: "subagent_completed", subagentId: agentId, result: text, completedAt: now };
-    }
-
-    if (isTerminalStatus(existing.status)) {
-      if (existing.status !== "completed") {
-        debug("ignored read_subagent fallback for non-completed subagent", {
-          agentId: agentId.slice(0, 8),
-          status: existing.status,
-        });
-        return null;
-      }
-      if (!existing.result && text) {
-        existing.result = text;
-        this.subagents.set(agentId, existing);
-        return { type: "subagent_updated", subagentId: agentId, patch: { result: text } };
-      }
+      // Unknown subagent: read_subagent output is not a strong enough signal to
+      // invent a new lifecycle transition.
       return null;
     }
-
-    const before = {
-      status: existing.status,
-      result: existing.result,
-      error: existing.error,
-      completedAt: existing.completedAt,
-    };
-
-    existing.status = "completed";
-    existing.result = text;
-    if (existing.error) existing.error = null;
-    existing.completedAt = existing.completedAt ?? now;
-
-    const changed =
-      before.status !== existing.status ||
-      before.result !== existing.result ||
-      before.error !== existing.error ||
-      before.completedAt !== existing.completedAt;
-    if (!changed) return null;
-
-    this.subagents.set(agentId, existing);
-    return { type: "subagent_completed", subagentId: agentId, result: existing.result, completedAt: existing.completedAt ?? now };
+    const mutation = this.planCompletionMutation(agentId, existing, { status: "completed", content: text }, Date.now());
+    return this.commitMutation(agentId, mutation);
   }
 
   private makeTerminalEvent(s: SubagentDescriptor): NormalizedSubagentEvent {
@@ -706,6 +591,94 @@ export class SubagentRegistry {
       completedAt: s.completedAt ?? Date.now(),
       status: s.status as "failed" | "cancelled",
     };
+  }
+
+  /** A plan for how to mutate a subagent descriptor and which event to emit. */
+  private planCompletionMutation(
+    agentId: string,
+    existing: SubagentDescriptor | undefined,
+    incoming: { status: TerminalSubagentStatus; content: string | null },
+    completedAt: number,
+  ): SubagentMutation {
+    if (!existing) {
+      const descriptor = this.ensureSubagent(agentId, {
+        status: incoming.status,
+        result: incoming.status === "completed" ? incoming.content : null,
+        error: incoming.status === "failed" ? incoming.content : null,
+        completedAt,
+        startedAt: null,
+        title: `Subagent ${agentId.slice(0, 8)}`,
+        prompt: null,
+        profile: null,
+        parentSubagentId: null,
+        parentToolCallId: null,
+        depth: 1,
+        isBackground: true,
+      });
+      return { kind: "lifecycle", descriptor, event: this.makeTerminalEvent(descriptor) };
+    }
+
+    // Conflicting terminal statuses are immutable.
+    if (isTerminalStatus(existing.status)) {
+      if (existing.status !== incoming.status) {
+        debug("ignored conflicting completion", {
+          agentId: agentId.slice(0, 8),
+          existing: existing.status,
+          incoming: incoming.status,
+        });
+        return { kind: "none" };
+      }
+
+      const patch: Partial<SubagentDescriptor> = {};
+      if (incoming.status === "completed") {
+        if (!existing.result && incoming.content) {
+          patch.result = incoming.content;
+        }
+      } else if (incoming.status === "failed") {
+        if (!existing.error && incoming.content) {
+          patch.error = incoming.content;
+        }
+      }
+      // cancelled: preserve no misleading success or failure payload.
+
+      if (Object.keys(patch).length === 0) {
+        debug("ignored duplicate completion", { agentId: agentId.slice(0, 8), status: existing.status });
+        return { kind: "none" };
+      }
+
+      const descriptor = { ...existing, ...patch };
+      return { kind: "update", descriptor, patch, event: { type: "subagent_updated", subagentId: agentId, patch } };
+    }
+
+    const before = {
+      status: existing.status,
+      result: existing.result,
+      error: existing.error,
+      completedAt: existing.completedAt,
+    };
+
+    const descriptor = {
+      ...existing,
+      status: incoming.status,
+      result: incoming.status === "completed" ? incoming.content : null,
+      error: incoming.status === "failed" ? incoming.content : null,
+      completedAt: existing.completedAt ?? completedAt,
+    };
+
+    const changed =
+      before.status !== descriptor.status ||
+      before.result !== descriptor.result ||
+      before.error !== descriptor.error ||
+      before.completedAt !== descriptor.completedAt;
+    if (!changed) return { kind: "none" };
+
+    return { kind: "lifecycle", descriptor, event: this.makeTerminalEvent(descriptor) };
+  }
+
+  private commitMutation(agentId: string, mutation: SubagentMutation): NormalizedSubagentEvent | null {
+    if (mutation.kind === "none") return null;
+    this.subagents.set(agentId, mutation.descriptor);
+    return mutation.event;
   }
 
   private matchPendingSpawn(
