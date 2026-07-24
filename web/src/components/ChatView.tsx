@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { createSession, dropSession, renameSession, selectSession, setUi, showNotice, useStore } from "../state";
+import { clearSession, createSession, dropSession, renameSession, selectSession, setUi, showNotice, useStore } from "../state";
 import type { SessionState } from "../state";
 import { formatTokens, relTime } from "../utils";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ import {
   CheckIcon,
   CopyIcon,
   DownloadIcon,
+  EraserIcon,
   MenuIcon,
   MessageSquareIcon,
   MoreHorizontalIcon,
@@ -324,6 +325,18 @@ export default function ChatView({ session }: { session: SessionState | null }) 
         <div className="flex-1" />
         {session && <ModeSwitcher session={session} />}
         {session && <ModelPicker session={session} />}
+        {session && (
+          <TooltipIconButton
+            tooltip="Clear / new session"
+            variant="ghost"
+            size="icon"
+            className="size-9 text-muted-foreground"
+            aria-label="Clear and start new session"
+            onClick={() => void clearSession(session.sessionId)}
+          >
+            <EraserIcon className="size-4" />
+          </TooltipIconButton>
+        )}
         {session && <Gauge usage={session.usage} />}
         {session && (
           <TooltipIconButton

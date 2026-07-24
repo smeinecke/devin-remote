@@ -134,15 +134,16 @@ export class WsSubscriber {
   }
 
   private replayOrSnapshot(ws: WebSocket, sessionId: string, processGeneration: number, after: number, controller: { snapshot(): unknown } | undefined) {
+    // Send historical events first so the client can render transcript data,
+    // then close with an authoritative snapshot that fixes lifecycle state.
     const replay = this.eventBus.replay(sessionId, processGeneration, after);
-    if (replay === undefined) {
-      const snapshot = this.eventBus.snapshot(sessionId, processGeneration, controller?.snapshot() ?? null);
-      ws.send(JSON.stringify(snapshot));
-    } else {
+    if (replay !== undefined) {
       for (const ev of replay) {
         ws.send(JSON.stringify(toEnvelope(ev)));
       }
     }
+    const snapshot = this.eventBus.snapshot(sessionId, processGeneration, controller?.snapshot() ?? null);
+    ws.send(JSON.stringify(snapshot));
   }
 
   clientsCount(): number {

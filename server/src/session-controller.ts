@@ -8,6 +8,7 @@ import { nextStatus, isActive, isRunning, type SessionStatus } from "./lifecycle
 import type { AcpProcess } from "./acp-process.js";
 import type { TerminalManager } from "./terminal-manager.js";
 import { SubagentRegistry } from "./subagents.js";
+import type { ActiveOperation } from "./types.js";
 
 export interface SessionMetadata {
   sessionId: string;
@@ -42,9 +43,10 @@ export interface SessionSnapshot {
   title: string | null;
   cwd: string;
   branch: string | null;
-  activeOperation?: string;
+  activeOperation: ActiveOperation | null;
   pendingPermissions: PermissionRequest[];
   running: boolean;
+  cancellable: boolean;
   /** Sequence number of the newest event in the generation buffer. */
   latestSequence: number;
   /** Materialized conversation state when available. */
@@ -134,6 +136,16 @@ export class SessionController {
     return isRunning(this.status);
   }
 
+  get isCancellable(): boolean {
+    return this.activeOperation?.kind === "prompt" && (this.status === "running" || this.status === "waiting_for_permission");
+  }
+
+  get activeOperationSnapshot(): ActiveOperation | null {
+    const op = this.activeOperation;
+    if (!op) return null;
+    return { kind: op.kind, id: op.name, processGeneration: op.generation };
+  }
+
   getAcp(): AcpProcess | null {
     return this.acp;
   }
@@ -159,9 +171,10 @@ export class SessionController {
       title: this.title,
       cwd: this.cwd,
       branch: this.branch,
-      activeOperation: this.activeOperation?.name,
+      activeOperation: this.activeOperationSnapshot,
       pendingPermissions: [...this.pendingPermissions.values()],
       running: this.isRunning,
+      cancellable: this.isCancellable,
       latestSequence: this.eventBus.latestSequence(this.sessionId, this.processGeneration) ?? 0,
       subagents: this.subagentRegistry.snapshot(),
     };
@@ -182,7 +195,13 @@ export class SessionController {
 
   private emitStateChange(previous: SessionStatus, next: SessionStatus) {
     if (this.dropped) return;
-    this.eventBus.emit(this.sessionId, this.processGeneration, "state_change", { previous, next, activeOperation: this.activeOperation?.name });
+    this.eventBus.emit(this.sessionId, this.processGeneration, "state_change", {
+      previous,
+      next,
+      running: this.isRunning,
+      cancellable: this.isCancellable,
+      activeOperation: this.activeOperationSnapshot,
+    });
   }
 
   /** Idempotent attach for an existing session (load or resume). */
@@ -337,8 +356,15 @@ export class SessionController {
 
     const generation = this.processGeneration;
     const token = Symbol("prompt");
-    this.activeOperation = { token, generation, kind: "prompt", name: `prompt-${Date.now()}` };
+    const operation = { token, generation, kind: "prompt" as const, name: `prompt-${Date.now()}` };
+    this.activeOperation = operation;
     this.emitStateChange(this.status, this.status);
+    this.eventBus.emit(this.sessionId, generation, "prompt_started", {
+      operationId: operation.name,
+      processGeneration: generation,
+      status: this.status === "running" ? "running" : "waiting_for_permission",
+      cancellable: this.isCancellable,
+    });
 
     const process = this.acp;
     const promise = process.prompt(blocks);
@@ -361,7 +387,13 @@ export class SessionController {
       if (this.status === "running" || this.status === "waiting_for_permission" || this.status === "cancelling") {
         this.transition("complete");
       }
-      this.eventBus.emit(this.sessionId, generation, "prompt_done", { result });
+      this.eventBus.emit(this.sessionId, generation, "prompt_done", {
+        result,
+        operationId: operation.name,
+        processGeneration: generation,
+        status: "completed",
+        cancellable: false,
+      });
       this.metadata.updatedAt = Date.now();
       return result;
     } catch (err) {
@@ -383,9 +415,35 @@ export class SessionController {
     }
   }
 
-  async cancel(): Promise<void> {
+  async cancel(opts?: { processGeneration?: number; operationId?: string }): Promise<void> {
+    if (this.dropped) {
+      throw this.cancelError("PROCESS_UNAVAILABLE", "Session has been dropped.", 410);
+    }
+    if (opts && typeof opts.processGeneration === "number" && opts.processGeneration !== this.processGeneration) {
+      throw this.cancelError("STALE_GENERATION", "The requested process generation is no longer active.", 409);
+    }
+
+    if (this.status === "cancelling") {
+      // Idempotent: a cancel is already in progress for this generation.
+      return;
+    }
+
+    const promptOp = this.activeOperation;
+    const hasPrompt = promptOp?.kind === "prompt" && (this.status === "running" || this.status === "waiting_for_permission");
+    if (!hasPrompt) {
+      if (opts?.operationId && promptOp && promptOp.name !== opts.operationId) {
+        throw this.cancelError("STALE_OPERATION", "The requested operation is no longer active.", 409);
+      }
+      throw this.cancelError("NO_ACTIVE_PROMPT", "No prompt is currently running.", 409);
+    }
+    if (opts?.operationId && promptOp.name !== opts.operationId) {
+      throw this.cancelError("STALE_OPERATION", "The requested operation is no longer active.", 409);
+    }
+
     const t = this.transition("cancel");
-    if (!t.ok) throw Object.assign(new Error(t.message), { status: t.status });
+    if (!t.ok) {
+      throw this.cancelError("NO_ACTIVE_PROMPT", t.message, t.status);
+    }
 
     const generation = this.processGeneration;
     const token = Symbol("cancel");
@@ -416,6 +474,10 @@ export class SessionController {
         this.activeOperation = undefined;
       }
     }
+  }
+
+  private cancelError(code: string, message: string, status = 400) {
+    return Object.assign(new Error(message), { code, status, state: this.snapshot() });
   }
 
   resolvePermission(requestId: string, optionId: string | null): boolean {

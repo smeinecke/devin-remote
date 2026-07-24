@@ -155,7 +155,7 @@ export function SessionRuntime({
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     messages,
     convertMessage: (m) => m,
-    isRunning: session.running,
+    isRunning: session.cancellable,
     isLoading: !session.synced,
     onNew: async (msg) => {
       const text = msg.content

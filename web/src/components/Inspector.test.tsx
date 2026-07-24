@@ -66,6 +66,8 @@ function session(overrides: Partial<SessionState> = {}): SessionState {
     availableCommands: [],
     permissions: [],
     running: true,
+    cancellable: true,
+    activeOperation: null,
     synced: true,
     unread: false,
     openAgentMsg: null,

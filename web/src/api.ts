@@ -1,4 +1,6 @@
 import type {
+  ActiveOperation,
+  MaterializedSessionState,
   MetaResponse,
   PromptBlock,
   PromptDoneResult,
@@ -37,20 +39,32 @@ export const api = {
     req<{ sessionId: string; processGeneration: number; cwd: string; branch: string | null; worktree: string | null; modes: unknown }>("POST", "/api/sessions", { cwd, isolate }),
 
   attachSession: (sessionId: string) =>
-    req<{ ok: boolean; status: string; processGeneration: number }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/attach`),
+    req<{ ok: boolean; status: string; processGeneration: number; sessionId: string; running: boolean; cancellable: boolean; activeOperation: ActiveOperation | null }>(
+      "POST",
+      `/api/sessions/${encodeURIComponent(sessionId)}/attach`,
+    ),
 
   openSession: (sessionId: string, cwd?: string) =>
-    req<{ ok: boolean; status: string; processGeneration: number; sessionId: string; branch: string | null; worktree: string | null }>(
-      "POST",
-      `/api/sessions/${encodeURIComponent(sessionId)}/open`,
-      { cwd },
-    ),
+    req<{
+      ok: boolean;
+      status: string;
+      processGeneration: number;
+      sessionId: string;
+      branch: string | null;
+      worktree: string | null;
+      running: boolean;
+      cancellable: boolean;
+      activeOperation: ActiveOperation | null;
+    }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/open`, { cwd }),
 
   prompt: (sessionId: string, blocks: PromptBlock[]) =>
     req<PromptDoneResult>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/prompt`, { blocks }),
 
-  cancel: (sessionId: string) =>
-    req<{ ok: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/cancel`, {}),
+  cancel: (sessionId: string, body: { processGeneration: number; operationId?: string | null }) =>
+    req<
+      | { ok: true; status: string; processGeneration: number; running: boolean; cancellable: boolean; activeOperation: ActiveOperation | null }
+      | { ok: false; error: { code: string; message: string }; state: MaterializedSessionState | null }
+    >("POST", `/api/sessions/${encodeURIComponent(sessionId)}/cancel`, body),
 
   rename: (sessionId: string, title: string) =>
     req<{ ok: boolean; remote: boolean }>("POST", `/api/sessions/${encodeURIComponent(sessionId)}/rename`, { title }),

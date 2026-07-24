@@ -19,6 +19,7 @@ import { mentionToUri, extractMentions, randomUUID } from "./utils";
 import { rebuildRuns } from "./runs";
 import { isTerminalSubagentStatus } from "./activity";
 import type {
+  ActiveOperation,
   SubagentDescriptor,
   MetaResponse,
   PromptBlock,
@@ -37,7 +38,7 @@ import type {
   AvailableCommandsUpdate,
   SessionInfoUpdate,
   PermissionRequestPayload,
-  NormalizedSubagentEvent,
+  SubagentStartedEvent,
 } from "./types";
 
 export * from "./store-types";
@@ -132,6 +133,8 @@ function emptySession(summary: SessionSummary): SessionState {
     availableCommands: [],
     permissions: [],
     running: false,
+    cancellable: false,
+    activeOperation: null,
     synced: false,
     unread: false,
     openAgentMsg: null,
@@ -213,6 +216,9 @@ export async function createSession(cwd: string): Promise<void> {
       d.synced = true;
       d.processGeneration = res.processGeneration;
       d.status = "idle";
+      d.running = false;
+      d.cancellable = false;
+      d.activeOperation = null;
     });
     setState({ activeSessionId: res.sessionId, ui: { ...state.ui, sidebarOpen: false } });
     subscribeSession(res.sessionId, res.processGeneration, 0);
@@ -224,10 +230,58 @@ export async function createSession(cwd: string): Promise<void> {
   }
 }
 
+export async function clearSession(sessionId: string): Promise<void> {
+  const s = state.sessions[sessionId];
+  if (!s) return;
+  const dir = s.cwd.trim();
+  if (!dir) {
+    showNotice("current session has no workspace directory");
+    return;
+  }
+  try {
+    const res = await api.createSession(dir, false);
+    ensureSession({
+      sessionId: res.sessionId,
+      cwd: res.cwd,
+      title: null,
+      alias: null,
+      branch: res.branch,
+      worktree: res.worktree,
+      updatedAt: new Date().toISOString(),
+    });
+    updateSession(res.sessionId, (d) => {
+      d.synced = true;
+      d.processGeneration = res.processGeneration;
+      d.status = "idle";
+      d.running = false;
+      d.cancellable = false;
+      d.activeOperation = null;
+    });
+    setState({ activeSessionId: res.sessionId, ui: { ...state.ui, sidebarOpen: false } });
+    subscribeSession(res.sessionId, res.processGeneration, 0);
+    const modelOpt = s.configOptions.find((o) => o.category === "model");
+    if (s.currentModeId) {
+      await setSessionConfig(res.sessionId, "mode", s.currentModeId);
+    }
+    if (modelOpt?.currentValue) {
+      await setSessionConfig(res.sessionId, "model", modelOpt.currentValue);
+    }
+  } catch (err) {
+    showNotice(err instanceof Error ? err.message : "failed to clear session");
+  }
+}
+
 export async function selectSession(sessionId: string): Promise<void> {
   const s = state.sessions[sessionId];
   if (!s) return;
   setState({ activeSessionId: sessionId, ui: { ...state.ui, sidebarOpen: false } });
+  // Prevent the UI from showing a stale "Stop generating" while attaching.
+  updateSession(sessionId, (d) => {
+    d.running = false;
+    d.cancellable = false;
+    d.activeOperation = null;
+    d.status = "loading";
+  });
   if (s.synced) {
     subscribeSession(sessionId, s.processGeneration, latestSequenceFor(sessionId));
     return;
@@ -249,6 +303,9 @@ export async function selectSession(sessionId: string): Promise<void> {
       d.synced = true;
       d.processGeneration = open.processGeneration;
       d.status = open.status as SessionState["status"];
+      d.running = open.running;
+      d.cancellable = open.cancellable;
+      d.activeOperation = open.activeOperation ?? null;
       d.branch = open.branch ?? d.branch;
       d.worktree = open.worktree ?? d.worktree;
     });
@@ -323,14 +380,13 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
               : "agent";
         closeOpenMessages(d, role);
         appendChunk(d, role, u.content?.text ?? "");
-        if (role !== "user") d.running = true;
+        // Content events are not authoritative for lifecycle state.
         break;
       }
       case "tool_call": {
         const u = update as ToolCallStartUpdate;
         const raw = update as Record<string, unknown>;
         closeOpenMessages(d);
-        d.running = true;
         const existing = d.toolCalls[u.toolCallId];
         const subagentTitle = subagentTitleFromUpdate(raw);
         const tc: ToolCallState = {
@@ -393,7 +449,7 @@ function applySessionUpdate(sessionId: string, update: SessionUpdate): void {
         const u = update as PlanUpdate;
         closeOpenMessages(d);
         d.plan = u.entries ?? [];
-        d.running = true;
+        // Content events are not authoritative for lifecycle state.
         break;
       }
       case "usage_update": {
@@ -580,6 +636,8 @@ export async function sendPrompt(sessionId: string, text: string, attachments: A
     d.messages = { ...d.messages, [id]: msg };
     d.timeline = [...d.timeline, { kind: "message", id }];
     d.running = true;
+    d.cancellable = true;
+    d.activeOperation = null;
     d.activePromptRequest = { token, generation };
   });
 
@@ -612,6 +670,8 @@ export async function sendPrompt(sessionId: string, text: string, attachments: A
       };
       d.timeline = [...d.timeline, { kind: "message", id: eid }];
       d.running = false;
+      d.cancellable = false;
+      d.activeOperation = null;
       d.activePromptRequest = null;
     });
   } finally {
@@ -627,13 +687,27 @@ export async function sendPrompt(sessionId: string, text: string, attachments: A
 export async function cancelPrompt(sessionId: string): Promise<void> {
   const s = state.sessions[sessionId];
   if (!s) return;
+  const operationId = s.activeOperation?.id;
+  const processGeneration = s.processGeneration;
   try {
-    await api.cancel(sessionId);
+    const res = await api.cancel(sessionId, { processGeneration, operationId: operationId ?? null });
+    if ("error" in res) {
+      // Server rejected the cancel because there was nothing to cancel or the
+      // operation was stale. Reconcile to authoritative state without adding
+      // an error to the conversation.
+      applyMaterializedState(sessionId, res.state ?? null);
+      return;
+    }
+    updateSession(sessionId, (d) => {
+      d.status = res.status as SessionState["status"];
+      d.processGeneration = res.processGeneration;
+      d.running = res.running;
+      d.cancellable = res.cancellable;
+      d.activeOperation = res.activeOperation ?? null;
+      if (!res.cancellable) closeOpenMessages(d);
+    });
   } catch (err) {
     showNotice(err instanceof Error ? err.message : "cancel failed");
-    updateSession(sessionId, (d) => {
-      d.running = false;
-    });
   }
 }
 
@@ -729,6 +803,26 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   }
 }
 
+function applyMaterializedState(sessionId: string, snapshotState: Partial<SessionState> | null): void {
+  updateSession(sessionId, (d) => {
+    if (!snapshotState) {
+      // No state provided; fall back to safe idle defaults.
+      d.running = false;
+      d.cancellable = false;
+      d.activeOperation = null;
+      d.status = "idle";
+      closeOpenMessages(d);
+      return;
+    }
+    if (snapshotState.status) d.status = snapshotState.status as SessionState["status"];
+    if (typeof snapshotState.running === "boolean") d.running = snapshotState.running;
+    if (typeof snapshotState.cancellable === "boolean") d.cancellable = snapshotState.cancellable;
+    if ("activeOperation" in snapshotState) d.activeOperation = (snapshotState.activeOperation ?? null) as ActiveOperation | null;
+    // Close any streaming message markers when the server says no prompt is running.
+    if (!d.running) closeOpenMessages(d);
+  });
+}
+
 // WS dispatch
 export function dispatchEvent(ev: WsServerEvent): void {
   if (ev.type === "config") {
@@ -745,9 +839,7 @@ export function dispatchEvent(ev: WsServerEvent): void {
 
   if (ev.type === "snapshot") {
     const s = ev as SnapshotEnvelope;
-    // Only treat the snapshot as a full replacement when the server explicitly
-    // says it is complete and provides a materialized state. Otherwise merge
-    // events into the existing view and preserve already-applied sequences.
+    // A full replacement snapshot resets the entire conversation view.
     const replacing = s.complete && s.state != null;
     const snapshotState = (s.state ?? {}) as Partial<SessionState> & { pendingPermissions?: unknown };
     ensureSession({
@@ -782,11 +874,8 @@ export function dispatchEvent(ev: WsServerEvent): void {
         d.runs = {};
         d.plan = null;
         d.usage = null;
-        d.running = false;
         d.permissions = [];
       }
-      if (snapshotState.status) d.status = snapshotState.status as SessionState["status"];
-      if (typeof snapshotState.running === "boolean") d.running = snapshotState.running;
       if (snapshotState.pendingPermissions) d.permissions = snapshotState.pendingPermissions as PendingPermission[];
       if (snapshotState.subagents) {
         d.subagents = { ...(d.subagents ?? {}), ...(snapshotState.subagents as Record<string, SubagentDescriptor>) };
@@ -799,7 +888,11 @@ export function dispatchEvent(ev: WsServerEvent): void {
       }
       d.synced = true;
     });
-    for (const e of s.events) applyEventEnvelope(e as ServerEventEnvelope);
+    // Replay historical content events first, then apply the authoritative
+    // controller lifecycle state so stale transcript events cannot resurrect
+    // a "Stop generating" button for an idle session.
+    for (const e of s.events) applyEventEnvelope(e as ServerEventEnvelope, { source: "replay" });
+    applyMaterializedState(s.sessionId, snapshotState);
     return;
   }
 
@@ -829,6 +922,8 @@ function handleGenerationChanged(sessionId: string, previousGeneration: number, 
     d.processGeneration = processGeneration;
     d.lastSequence = 0;
     d.running = false;
+    d.cancellable = false;
+    d.activeOperation = null;
     d.activePromptRequest = null;
     d.permissions = [];
     d.subagents = preserved;
@@ -878,7 +973,11 @@ function applySubagentDescriptor(d: SessionState, subagent: SubagentDescriptor):
   d.toolCalls = nextToolCalls;
 }
 
-function applyEventEnvelope(ev: ServerEventEnvelope): void {
+interface EventApplyContext {
+  source: "live" | "replay" | "snapshot";
+}
+
+function applyEventEnvelope(ev: ServerEventEnvelope, ctx: EventApplyContext = { source: "live" }): void {
   const { sessionId, processGeneration, eventType, payload } = ev;
   if (eventType === "generation_changed") {
     const p = payload as { previousGeneration: number; processGeneration: number };
@@ -904,15 +1003,24 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       break;
     }
     case "state_change": {
-      const p = payload as { previous: string; next: string };
+      const p = payload as {
+        previous: string;
+        next: string;
+        running?: boolean;
+        cancellable?: boolean;
+        activeOperation?: ActiveOperation | null;
+      };
       updateSession(sessionId, (d) => {
         d.status = p.next as SessionState["status"];
         d.processGeneration = processGeneration;
+        if (typeof p.running === "boolean") d.running = p.running;
+        if (typeof p.cancellable === "boolean") d.cancellable = p.cancellable;
+        if ("activeOperation" in p) d.activeOperation = p.activeOperation ?? null;
       });
       break;
     }
     case "permission_request": {
-      const p = payload as PermissionRequestPayload;
+      const p = payload as PermissionRequestPayload & { activeOperation?: ActiveOperation | null };
       ensureSession({
         sessionId,
         cwd: state.sessions[sessionId] ? "" : state.meta?.primaryCwd ?? "",
@@ -931,9 +1039,12 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       updateSession(sessionId, (d) => {
         d.permissions = [...d.permissions, perm];
         d.status = "waiting_for_permission";
+        d.running = true;
+        d.cancellable = true;
+        if ("activeOperation" in p) d.activeOperation = p.activeOperation ?? null;
       });
-      if (state.settings.soundNotify) soundNotify();
-      if (document.hidden && state.settings.desktopNotify) {
+      if (ctx.source === "live" && state.settings.soundNotify) soundNotify();
+      if (ctx.source === "live" && document.hidden && state.settings.desktopNotify) {
         notifyDesktop("Devin needs permission", String(p.toolCall?.title ?? "a tool call"));
       }
       break;
@@ -966,11 +1077,10 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       }
       break;
     }
-    case "subagent_started":
-    case "subagent_update": {
-      const p = payload as SubagentDescriptor;
+    case "subagent_started": {
+      const p = payload as SubagentStartedEvent;
       updateSession(sessionId, (d) => {
-        applySubagentDescriptor(d, p);
+        applySubagentDescriptor(d, p.subagent);
       });
       break;
     }
@@ -1101,8 +1211,25 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       updateSession(sessionId, (d) => {
         d.status = "disconnected";
         d.running = false;
+        d.cancellable = false;
+        d.activeOperation = null;
+        closeOpenMessages(d);
       });
-      if (p.status === "exited") showNotice(`session process exited (${p.code ?? "?"}) — ${sessionId}`);
+      if (ctx.source === "live" && p.status === "exited") showNotice(`session process exited (${p.code ?? "?"}) — ${sessionId}`);
+      break;
+    }
+    case "prompt_started": {
+      const p = payload as { operationId: string; processGeneration: number; status: string; cancellable: boolean };
+      updateSession(sessionId, (d) => {
+        d.running = true;
+        d.cancellable = p.cancellable;
+        d.activeOperation = {
+          kind: "prompt",
+          id: p.operationId,
+          processGeneration: p.processGeneration,
+        };
+        d.status = (p.status as SessionState["status"]) ?? d.status;
+      });
       break;
     }
     case "prompt_done": {
@@ -1110,13 +1237,15 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
       updateSession(sessionId, (d) => {
         closeOpenMessages(d);
         d.running = false;
+        d.cancellable = false;
+        d.activeOperation = null;
         d.status = "idle";
       });
-      if (state.settings.soundComplete) soundComplete();
-      if (document.hidden && state.settings.desktopNotify) {
+      if (ctx.source === "live" && state.settings.soundComplete) soundComplete();
+      if (ctx.source === "live" && document.hidden && state.settings.desktopNotify) {
         notifyDesktop("Devin finished a turn", `stop reason: ${p.result?.stopReason ?? "end_turn"}`);
       }
-      setTimeout(() => void refreshSessions(), 1500);
+      if (ctx.source === "live") setTimeout(() => void refreshSessions(), 1500);
       break;
     }
   }
@@ -1138,7 +1267,7 @@ function applyEventEnvelope(ev: ServerEventEnvelope): void {
   }
 
   // Background unread activity.
-  if (sessionId && sessionId !== state.activeSessionId && eventType !== "state_change") {
+  if (ctx.source === "live" && sessionId && sessionId !== state.activeSessionId && eventType !== "state_change") {
     updateSession(sessionId, (d) => {
       d.unread = true;
     });

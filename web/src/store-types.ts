@@ -1,4 +1,5 @@
 import type {
+  ActiveOperation,
   ConfigOption,
   MetaResponse,
   PlanEntry,
@@ -135,6 +136,8 @@ export interface SessionState {
   availableCommands: SlashCommand[];
   permissions: PendingPermission[];
   running: boolean;
+  cancellable: boolean;
+  activeOperation: ActiveOperation | null;
   synced: boolean;
   unread: boolean;
   openAgentMsg: string | null;

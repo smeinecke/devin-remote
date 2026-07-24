@@ -192,6 +192,9 @@ export async function handleApi(
           sessionId: c.sessionId,
           branch: c.branch,
           worktree: c.worktree,
+          running: c.isRunning,
+          cancellable: c.isCancellable,
+          activeOperation: c.activeOperationSnapshot,
         });
       }
 
@@ -205,6 +208,9 @@ export async function handleApi(
           status: c.currentStatus,
           processGeneration: c.processGeneration,
           sessionId: c.sessionId,
+          running: c.isRunning,
+          cancellable: c.isCancellable,
+          activeOperation: c.activeOperationSnapshot,
         });
       }
 
@@ -240,8 +246,30 @@ export async function handleApi(
       const c = requireController(ctx, id);
 
       if (m === "POST" && action === "cancel") {
-        await c.cancel();
-        return json(res, 200, { ok: true });
+        const body = await readJson(req);
+        try {
+          await c.cancel({
+            processGeneration: typeof body.processGeneration === "number" ? body.processGeneration : undefined,
+            operationId: typeof body.operationId === "string" ? body.operationId : undefined,
+          });
+        } catch (err) {
+          const e = err as Error & { code?: string; state?: unknown; status?: number };
+          const status = e.status ?? 409;
+          return json(res, status, {
+            ok: false,
+            error: { code: e.code ?? "NO_ACTIVE_PROMPT", message: e.message },
+            state: e.state,
+          });
+        }
+        const snap = c.snapshot();
+        return json(res, 200, {
+          ok: true,
+          status: snap.status,
+          processGeneration: snap.processGeneration,
+          running: snap.running,
+          cancellable: snap.cancellable,
+          activeOperation: snap.activeOperation,
+        });
       }
 
       if (m === "POST" && action === "rename") {

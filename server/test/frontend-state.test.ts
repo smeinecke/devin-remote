@@ -29,6 +29,8 @@ function makeSession(sessionId: string, processGeneration: number): SessionState
     availableCommands: [],
     permissions: [],
     running: false,
+    cancellable: false,
+    activeOperation: null,
     synced: true,
     unread: false,
     openAgentMsg: null,

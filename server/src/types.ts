@@ -10,6 +10,12 @@ export interface UsageRecord {
   model?: string;
 }
 
+export interface ActiveOperation {
+  kind: "prompt" | "cancel" | "attach";
+  id: string;
+  processGeneration: number;
+}
+
 export interface SessionMetadata {
   sessionId: string;
   cwd: string;
@@ -77,9 +83,10 @@ export interface MaterializedSessionState {
   alias?: string | null;
   branch?: string | null;
   worktree?: string | null;
-  activeOperation?: string;
+  activeOperation?: ActiveOperation | null;
   pendingPermissions: unknown[];
   running: boolean;
+  cancellable: boolean;
   latestSequence: number;
 }
 

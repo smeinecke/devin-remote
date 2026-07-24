@@ -28,6 +28,8 @@ function makeSession(cwd: string, worktree: string | null = null): SessionState 
     availableCommands: [],
     permissions: [],
     running: true,
+    cancellable: true,
+    activeOperation: null,
     synced: true,
     unread: false,
     openAgentMsg: null,

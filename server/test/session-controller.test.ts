@@ -225,21 +225,21 @@ describe("SessionController", () => {
     // Start prompt A in generation 1.
     const promptA = c.prompt([{ type: "text", text: "a" }]);
     const opA = c.snapshot().activeOperation;
-    assert.match(opA ?? "", /^prompt-/);
+    assert.match(opA?.id ?? "", /^prompt-/);
 
     // Replace with generation 2 and start prompt B.
     c.status = "failed";
     await c.attach(makeFactory(processes));
     const promptB = c.prompt([{ type: "text", text: "b" }]);
     const opB = c.snapshot().activeOperation;
-    assert.match(opB ?? "", /^prompt-/);
+    assert.match(opB?.id ?? "", /^prompt-/);
 
     // Settle the stale generation-1 prompt.
     processes[0].resolvePrompt({ result: "A" });
     await promptA.catch(() => {});
 
     // activeOperation should still refer to prompt B.
-    assert.strictEqual(c.snapshot().activeOperation, opB);
+    assert.strictEqual(c.snapshot().activeOperation?.id, opB?.id);
 
     // Clean up B.
     processes[1].resolvePrompt({ result: "B" });
@@ -407,5 +407,153 @@ describe("SessionController", () => {
     assert.ok(failed);
     assert.strictEqual(failed.payload.subagentId, "sub-a");
     assert.ok(failed.payload.completedAt);
+  });
+
+  it("exposes authoritative running, cancellable and activeOperation state", async () => {
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, new EventBus(), {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    let snap = c.snapshot();
+    assert.strictEqual(snap.running, false);
+    assert.strictEqual(snap.cancellable, false);
+    assert.strictEqual(snap.activeOperation, null);
+    assert.strictEqual(c.isCancellable, false);
+
+    const promptP = c.prompt([{ type: "text", text: "hi" }]);
+    snap = c.snapshot();
+    assert.strictEqual(snap.running, true);
+    assert.strictEqual(snap.cancellable, true);
+    assert.strictEqual(snap.activeOperation?.kind, "prompt");
+    assert.match(snap.activeOperation?.id ?? "", /^prompt-/);
+
+    processes[0].resolvePrompt({ result: "ok" });
+    await promptP;
+    snap = c.snapshot();
+    assert.strictEqual(snap.running, false);
+    assert.strictEqual(snap.cancellable, false);
+    assert.strictEqual(snap.activeOperation, null);
+  });
+
+  it("reports cancellable=false while cancelling", async () => {
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, new EventBus(), {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    const promptP = c.prompt([{ type: "text", text: "hi" }]);
+    const cancelP = c.cancel();
+    assert.strictEqual(c.status, "cancelling");
+    assert.strictEqual(c.isCancellable, false);
+    assert.strictEqual(c.snapshot().cancellable, false);
+
+    processes[0].rejectPrompt(new Error("cancelled"));
+    await Promise.all([promptP.catch(() => {}), cancelP]);
+    assert.strictEqual(c.status, "idle");
+  });
+
+  it("returns a structured NO_ACTIVE_PROMPT error when cancelling an idle session", async () => {
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, new EventBus(), {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    let err: any;
+    try {
+      await c.cancel();
+    } catch (e) {
+      err = e;
+    }
+    assert.ok(err);
+    assert.strictEqual(err.code, "NO_ACTIVE_PROMPT");
+    assert.ok(err.state);
+    assert.strictEqual(err.state.running, false);
+    assert.strictEqual(err.state.cancellable, false);
+  });
+
+  it("rejects a stale-generation cancel", async () => {
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, new EventBus(), {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    const promptA = c.prompt([{ type: "text", text: "a" }]);
+    const opA = c.activeOperationSnapshot;
+
+    c.status = "failed";
+    await c.attach(makeFactory(processes));
+    const promptB = c.prompt([{ type: "text", text: "b" }]);
+
+    let err: any;
+    try {
+      await c.cancel({ processGeneration: 1, operationId: opA?.id });
+    } catch (e) {
+      err = e;
+    }
+    assert.strictEqual(err?.code, "STALE_GENERATION");
+
+    processes[0].rejectPrompt(new Error("cancelled"));
+    await promptA.catch(() => {});
+    processes[1].resolvePrompt({ result: "ok" });
+    await promptB;
+  });
+
+  it("rejects a stale-operation cancel", async () => {
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, new EventBus(), {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    const promptP = c.prompt([{ type: "text", text: "hi" }]);
+
+    let err: any;
+    try {
+      await c.cancel({ processGeneration: c.processGeneration, operationId: "wrong-op" });
+    } catch (e) {
+      err = e;
+    }
+    assert.strictEqual(err?.code, "STALE_OPERATION");
+
+    processes[0].resolvePrompt({ result: "ok" });
+    await promptP;
+  });
+
+  it("is idempotent for duplicate cancel requests", async () => {
+    const c = new SessionController("s1", "/tmp", fakeTerminalManager, new EventBus(), {
+      onPermissionOwner: () => {},
+      onExit: () => {},
+      onStatusChange: () => {},
+    });
+    const processes: FakeAcpProcess[] = [];
+    await c.create(makeFactory(processes));
+    c.status = "idle";
+
+    const promptP = c.prompt([{ type: "text", text: "hi" }]);
+    const cancel1 = c.cancel();
+    const cancel2 = c.cancel();
+    processes[0].rejectPrompt(new Error("cancelled"));
+    await Promise.all([promptP.catch(() => {}), cancel1, cancel2]);
+    assert.strictEqual(c.status, "idle");
   });
 });
