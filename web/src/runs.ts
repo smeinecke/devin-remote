@@ -196,30 +196,21 @@ function assignSubagentToRun(
 
   const startedAt = subagent.startedAt ?? null;
 
-  // 3. Timestamp boundary match.
+  // 3. Timestamp containment: the subagent started inside this run's boundary.
   if (startedAt !== null) {
     for (const run of runs) {
       if (startedAt >= run.startedAt && (run.endedAt === null || startedAt < run.endedAt)) {
         return run.id;
       }
     }
-
-    // Nearest previous run.
-    let nearest: RunBuilder | null = null;
-    for (const run of runs) {
-      if (run.startedAt <= startedAt && (!nearest || run.startedAt > nearest.startedAt)) {
-        nearest = run;
-      }
-    }
-    if (nearest) return nearest.id;
   }
 
-  // 4. Uncorrelated active subagent belongs to the current run.
+  // 4. Uncorrelated live subagent belongs only to the current run.
   const lastRun = runs[runs.length - 1];
   if (!isTerminalSubagentStatus(subagent.status)) {
     return lastRun.id;
   }
 
-  // 5. Historical uncorrelated fallback to the earliest run for determinism.
-  return runs[0].id;
+  // Do not copy completed, uncorrelated historical subagents into later runs.
+  return null;
 }

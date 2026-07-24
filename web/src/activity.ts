@@ -218,7 +218,11 @@ export function buildRunActivities(
       if (tcid === sid || seen.has(tcid)) continue;
       if (!context.toolSet.has(tcid)) continue;
       const tc = toolCallMap[tcid];
-      if (tc && !representedToolIds.has(tc.id)) {
+      // Only attach tools that explicitly belong to this subagent or have not yet
+      // been attributed to another one. This prevents a stale session-wide
+      // subagentId from pulling another run's tool into this run.
+      if (tc && (!tc.subagentId || tc.subagentId === sid)) {
+        if (representedToolIds.has(tc.id)) continue;
         seen.add(tc.id);
         tools.push(tc);
       }

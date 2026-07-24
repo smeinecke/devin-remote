@@ -471,4 +471,112 @@ describe("rebuildRuns multi-run attribution", () => {
     const second = JSON.stringify(s.runs["user-a-run"].activities.map((a) => a.id));
     expect(second).toBe(first);
   });
+
+  it("does not copy a completed uncorrelated historical subagent into a later run", () => {
+    const s = session({
+      timeline: [
+        { kind: "message", id: "user-a" },
+        { kind: "message", id: "user-b" },
+      ],
+      messages: {
+        "user-a": { id: "user-a", role: "user", text: "first", attachments: [], streaming: false, ts: 1000 },
+        "user-b": { id: "user-b", role: "user", text: "second", attachments: [], streaming: false, ts: 5000 },
+      },
+      subagents: {
+        "sub-a": subagent({ id: "sub-a", status: "completed", startedAt: 1500, completedAt: 2500 }),
+      },
+    });
+    rebuildRuns(s);
+    const runA = s.runs["user-a-run"];
+    const runB = s.runs["user-b-run"];
+    expect(runA.activities.map((a) => a.id)).toContain("sub-a");
+    expect(runB.activities.map((a) => a.id)).not.toContain("sub-a");
+  });
+
+  it("does not assign a completed uncorrelated subagent with no timestamp to any run", () => {
+    const s = session({
+      timeline: [
+        { kind: "message", id: "user-a" },
+        { kind: "tool", id: "tool-a" },
+        { kind: "message", id: "user-b" },
+      ],
+      messages: {
+        "user-a": { id: "user-a", role: "user", text: "first", attachments: [], streaming: false, ts: 1000 },
+        "user-b": { id: "user-b", role: "user", text: "second", attachments: [], streaming: false, ts: 5000 },
+      },
+      toolCalls: {
+        "tool-a": tool({ id: "tool-a", startedAt: 2000 }),
+      },
+      subagents: {
+        "sub-a": subagent({ id: "sub-a", status: "completed", startedAt: null as any, completedAt: 3000 }),
+      },
+    });
+    rebuildRuns(s);
+    for (const run of Object.values(s.runs)) {
+      expect(run.activities.map((a) => a.id)).not.toContain("sub-a");
+    }
+  });
+
+  it("suppresses the spawning tool only in the run that owns the subagent", () => {
+    const s = session({
+      timeline: [
+        { kind: "message", id: "user-a" },
+        { kind: "tool", id: "spawn-a" },
+        { kind: "message", id: "user-b" },
+      ],
+      messages: {
+        "user-a": { id: "user-a", role: "user", text: "first", attachments: [], streaming: false, ts: 1000 },
+        "user-b": { id: "user-b", role: "user", text: "second", attachments: [], streaming: false, ts: 5000 },
+      },
+      toolCalls: {
+        "spawn-a": tool({ id: "spawn-a", title: "Run subagent", kind: "run_subagent", startedAt: 2000 }),
+      },
+      subagents: {
+        "sub-a": subagent({ id: "sub-a", parentToolCallId: "spawn-a", startedAt: 2000 }),
+      },
+    });
+    rebuildRuns(s);
+    const runA = s.runs["user-a-run"];
+    const runB = s.runs["user-b-run"];
+    expect(runA.activities.map((a) => a.id)).toContain("sub-a");
+    expect(runA.activities.map((a) => a.id)).not.toContain("spawn-a");
+    expect(runB.activities.map((a) => a.id)).not.toContain("sub-a");
+    expect(runB.activities.map((a) => a.id)).not.toContain("spawn-a");
+    expect(runB.activities).toHaveLength(0);
+  });
+
+  it("never places the same subagent or tool in more than one run", () => {
+    const s = session({
+      timeline: [
+        { kind: "message", id: "user-a" },
+        { kind: "tool", id: "spawn-a" },
+        { kind: "tool", id: "tool-a" },
+        { kind: "message", id: "user-b" },
+        { kind: "tool", id: "spawn-b" },
+        { kind: "tool", id: "tool-b" },
+      ],
+      messages: {
+        "user-a": { id: "user-a", role: "user", text: "first", attachments: [], streaming: false, ts: 1000 },
+        "user-b": { id: "user-b", role: "user", text: "second", attachments: [], streaming: false, ts: 5000 },
+      },
+      toolCalls: {
+        "spawn-a": tool({ id: "spawn-a", title: "Run subagent", kind: "run_subagent", startedAt: 2000 }),
+        "tool-a": tool({ id: "tool-a", subagentId: "sub-a", startedAt: 3000 }),
+        "spawn-b": tool({ id: "spawn-b", title: "Run subagent", kind: "run_subagent", startedAt: 6000 }),
+        "tool-b": tool({ id: "tool-b", subagentId: "sub-b", startedAt: 7000 }),
+      },
+      subagents: {
+        "sub-a": subagent({ id: "sub-a", parentToolCallId: "spawn-a", toolCallIds: ["tool-a"], startedAt: 2000 }),
+        "sub-b": subagent({ id: "sub-b", parentToolCallId: "spawn-b", toolCallIds: ["tool-b"], startedAt: 6000 }),
+      },
+    });
+    rebuildRuns(s);
+    const seen = new Set<string>();
+    for (const run of Object.values(s.runs)) {
+      for (const id of collectIds(run.activities)) {
+        expect(seen.has(id)).toBe(false);
+        seen.add(id);
+      }
+    }
+  });
 });

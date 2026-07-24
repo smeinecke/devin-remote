@@ -210,6 +210,50 @@ describe("frontend subagent + permission state", () => {
     expect(s.subagents["sub-a"].error).toBeNull();
   });
 
+  it("repeats of the same subagent_updated backfill are idempotent", () => {
+    const session = makeSession("s1", 1);
+    session.subagents = {
+      "sub-a": {
+        id: "sub-a",
+        sessionId: "s1",
+        processGeneration: 1,
+        parentSubagentId: null,
+        parentToolCallId: null,
+        title: "List files",
+        prompt: "list files",
+        status: "completed",
+        startedAt: 1000,
+        completedAt: 2000,
+        result: null,
+        error: null,
+        profile: null,
+        depth: 1,
+        isBackground: false,
+        toolCallIds: [],
+        pendingPermissions: [],
+      } satisfies SubagentDescriptor,
+    };
+    setSession(session);
+
+    const backfill = {
+      type: "event" as const,
+      sessionId: "s1",
+      processGeneration: 1,
+      sequence: 1,
+      timestamp: Date.now(),
+      eventType: "subagent_updated",
+      payload: { subagentId: "sub-a", patch: { result: "68 files found" } },
+    };
+
+    dispatchEvent(backfill);
+    expect(getState().sessions.s1.subagents["sub-a"].result).toBe("68 files found");
+    expect(getState().sessions.s1.subagents["sub-a"].completedAt).toBe(2000);
+
+    dispatchEvent({ ...backfill, sequence: 2 });
+    expect(getState().sessions.s1.subagents["sub-a"].result).toBe("68 files found");
+    expect(getState().sessions.s1.subagents["sub-a"].completedAt).toBe(2000);
+  });
+
   it("does not overwrite a completed subagent result with a conflicting failure event", () => {
     const session = makeSession("s1", 1);
     session.subagents = {

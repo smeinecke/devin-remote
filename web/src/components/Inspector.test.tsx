@@ -363,6 +363,42 @@ describe("Inspector from normalized state", () => {
     expect(nested.length).toBeGreaterThan(0);
   });
 
+  it("does not leak a previous run's subagent or tools into the active run panel", () => {
+    const s = session({
+      status: "running",
+      timeline: [
+        { kind: "message", id: "user-a" },
+        { kind: "tool", id: "spawn-a" },
+        { kind: "tool", id: "tool-a" },
+        { kind: "message", id: "user-b" },
+      ],
+      messages: {
+        "user-a": { id: "user-a", role: "user", text: "first", attachments: [], streaming: false, ts: 1000 },
+        "user-b": { id: "user-b", role: "user", text: "second", attachments: [], streaming: false, ts: 5000 },
+      },
+      toolCalls: {
+        "spawn-a": toolCall({ id: "spawn-a", title: "Run subagent", kind: "run_subagent", startedAt: 2000 }),
+        "tool-a": toolCall({ id: "tool-a", title: "Read files", subagentId: "sub-a", startedAt: 3000 }),
+      },
+      subagents: {
+        "sub-a": subagentDescriptor("First run subagent", "completed", {
+          id: "sub-a",
+          parentToolCallId: "spawn-a",
+          toolCallIds: ["tool-a"],
+          result: "Done",
+          completedAt: 4000,
+          startedAt: 2000,
+        }),
+      },
+    });
+    setActiveSession(s);
+
+    const { container } = render(<Inspector />);
+    expect(screen.queryByText("First run subagent")).toBeNull();
+    expect(screen.queryByText("Read files")).toBeNull();
+    expect(container.textContent).toContain("0 activities");
+  });
+
   it("does not show a previous run's subagent in the active run panel", () => {
     const s = session({
       status: "running",
