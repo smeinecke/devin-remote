@@ -50,4 +50,23 @@ describe("TerminalManager", () => {
     tm.releaseFor("s1", 1);
     assert.strictEqual(tm.get(h.terminalId, "s1", 1), undefined);
   });
+
+  it("keeps a terminal status monotonic after the process exits", async () => {
+    const tm = new TerminalManager();
+    const h = tm.create(
+      {
+        sessionId: "s1",
+        processGeneration: 1,
+        command: "node",
+        args: ["-e", "setTimeout(() => {}, 50)"],
+        env: process.env,
+      },
+      { onOutput: () => {}, onExit: () => {} },
+    );
+    await tm.waitForExit(h.terminalId);
+    assert.strictEqual(h.status, "exited");
+    tm.kill(h.terminalId);
+    const t = tm.get(h.terminalId);
+    assert.strictEqual(t?.status, "exited");
+  });
 });

@@ -140,6 +140,7 @@ function ActivityItem({ activity, depth = 0 }: { activity: AgentActivity; depth?
       <button
         type="button"
         disabled={!canExpand}
+        aria-label={isSubagent ? `Subagent: ${activity.title}` : activity.title}
         onClick={() => setExpanded((e) => !e)}
         className={cn(
           "flex w-full min-w-0 items-center gap-2 text-left",

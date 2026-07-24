@@ -527,9 +527,9 @@ export class SubagentRegistry {
     outcome: { success?: boolean; summary?: string },
   ): NormalizedSubagentEvent | null {
     const s = this.subagents.get(agentId);
+    const now = Date.now();
     if (!s) {
       // Completion for a subagent we never saw start — create a minimal record.
-      const now = Date.now();
       const status = outcome.success === false ? "failed" : "completed";
       const descriptor: SubagentDescriptor = {
         id: agentId,
@@ -563,40 +563,50 @@ export class SubagentRegistry {
       };
     }
 
-    const previousStatus = s.status;
-    const now = Date.now();
-    const completedAt = s.completedAt ?? now;
-    const summary = outcome.summary ?? null;
+    const before = {
+      status: s.status,
+      completedAt: s.completedAt,
+      result: s.result,
+      error: s.error,
+    };
 
-    let status: SubagentDescriptor["status"] = s.status;
-    if (!isTerminalStatus(s.status) || s.status === "waiting_for_permission") {
+    const summary = outcome.summary ?? null;
+    const currentlyTerminal = isTerminalStatus(s.status);
+
+    // Do not move from one terminal status to a different terminal status.
+    if (!currentlyTerminal || s.status === "waiting_for_permission") {
       if (outcome.success) {
-        status = "completed";
+        s.status = "completed";
       } else {
         const lower = (summary ?? "").toLowerCase();
-        status = lower.includes("cancel") || lower.includes("cancelled") ? "cancelled" : "failed";
+        s.status = lower.includes("cancel") || lower.includes("cancelled") ? "cancelled" : "failed";
       }
     }
 
-    // Do not overwrite authoritative result / error / completion timestamps.
-    if (outcome.success) {
+    // Fill missing authoritative details without moving the status backward.
+    if (s.status === "completed") {
       if (summary && !s.result) s.result = summary;
-    } else {
+      if (s.error) s.error = null;
+    } else if (s.status === "failed" || s.status === "cancelled") {
       if (summary && !s.error) s.error = summary;
-      if (summary && !s.result) s.result = summary;
+      if (s.result) s.result = null;
     }
-    s.completedAt = completedAt;
-    s.status = status;
 
-    this.subagents.set(agentId, s);
+    s.completedAt = s.completedAt ?? now;
 
-    const changed = previousStatus !== s.status || s.completedAt !== completedAt;
-    if (!changed && s.result === summary && s.error === summary) {
-      debug("ignored duplicate completion", { agentId: agentId.slice(0, 8), status });
+    const changed =
+      before.status !== s.status ||
+      before.completedAt !== s.completedAt ||
+      before.result !== s.result ||
+      before.error !== s.error;
+
+    if (!changed) {
+      debug("ignored duplicate completion", { agentId: agentId.slice(0, 8), status: s.status });
       return null;
     }
 
-    debug("subagent completed", { agentId: agentId.slice(0, 8), status, success: outcome.success });
+    this.subagents.set(agentId, s);
+    debug("subagent completed", { agentId: agentId.slice(0, 8), status: s.status, success: outcome.success });
 
     if (s.status === "completed") {
       return { type: "subagent_completed", subagentId: agentId, result: s.result, completedAt: s.completedAt };
@@ -607,7 +617,7 @@ export class SubagentRegistry {
     return {
       type: "subagent_failed",
       subagentId: agentId,
-      error: s.error ?? s.result ?? "",
+      error: s.error ?? "",
       completedAt: s.completedAt,
       status: "failed",
     };
@@ -640,20 +650,33 @@ export class SubagentRegistry {
       return { type: "subagent_completed", subagentId: agentId, result: text, completedAt: now };
     }
 
-    if (isTerminalStatus(s.status)) {
-      if (text && !s.result) {
-        s.result = text;
-        this.subagents.set(agentId, s);
-        return { type: "subagent_completed", subagentId: agentId, result: s.result, completedAt: s.completedAt ?? now };
-      }
+    const before = {
+      status: s.status,
+      completedAt: s.completedAt,
+      result: s.result,
+      error: s.error,
+    };
+
+    if (!isTerminalStatus(s.status)) {
+      s.completedAt = s.completedAt ?? now;
+      s.status = "completed";
+      if (s.error) s.error = null;
+    }
+    if (text && !s.result) s.result = text;
+
+    const changed =
+      before.status !== s.status ||
+      before.completedAt !== s.completedAt ||
+      before.result !== s.result ||
+      before.error !== s.error;
+
+    if (!changed) {
+      debug("ignored duplicate read_subagent fallback", { agentId: agentId.slice(0, 8) });
       return null;
     }
 
-    s.completedAt = s.completedAt ?? now;
-    s.status = "completed";
-    if (text && !s.result) s.result = text;
     this.subagents.set(agentId, s);
-    return { type: "subagent_completed", subagentId: agentId, result: s.result, completedAt: s.completedAt };
+    return { type: "subagent_completed", subagentId: agentId, result: s.result, completedAt: s.completedAt ?? now };
   }
 
   private matchPendingSpawn(

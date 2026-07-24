@@ -87,6 +87,8 @@ export interface AgentActivity {
   children?: AgentActivity[];
   /** If this activity represents a subagent, the subagent id. */
   subagentId?: string;
+  /** If this activity represents a tool call, the tool call id. */
+  toolCallId?: string;
 }
 
 export type TimelineItem = { kind: "message" | "tool" | "run"; id: string };

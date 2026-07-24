@@ -96,7 +96,7 @@ function subagentStartedUpdate(
   };
 }
 
-function subagentCompletedUpdate(agentId: string, toolCallId: string, success: boolean, summary: string) {
+function subagentCompletedUpdate(agentId: string, toolCallId: string, success: boolean, summary: string | null) {
   return {
     sessionUpdate: "tool_call_update",
     toolCallId,
@@ -303,5 +303,93 @@ describe("SubagentRegistry snapshot", () => {
     assert.equal(snapshot.a1.pendingPermissions.length, 1);
     assert.equal(snapshot.a1.pendingPermissions[0], "perm-1");
     assert.equal(snapshot.a1.status, "waiting_for_permission");
+  });
+});
+
+describe("SubagentRegistry idempotent completion", () => {
+  it("emits a successful completion only once", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    const first = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "done"));
+    const second = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "done"));
+
+    assert.equal(first?.type, "subagent_completed");
+    assert.equal(second, null);
+    assert.equal(registry.get("a1")?.status, "completed");
+  });
+
+  it("emits a successful completion with a result only once", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "List files", "list files"));
+    const first = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "68 files found"));
+    const second = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "68 files found"));
+
+    assert.equal(first?.type, "subagent_completed");
+    assert.equal(second, null);
+    assert.equal(registry.get("a1")?.result, "68 files found");
+  });
+
+  it("emits a failed completion only once", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    const first = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "Database connection refused"));
+    const second = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "Database connection refused"));
+
+    assert.equal(first?.type, "subagent_failed");
+    assert.equal(second, null);
+    assert.equal(registry.get("a1")?.status, "failed");
+    assert.equal(registry.get("a1")?.error, "Database connection refused");
+  });
+
+  it("emits a cancelled completion only once", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    const first = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "cancelled by user"));
+    const second = registry.processUpdate(subagentCompletedUpdate("a1", "a1", false, "cancelled by user"));
+
+    assert.equal(first?.type, "subagent_cancelled");
+    assert.equal(second, null);
+    assert.equal(registry.get("a1")?.status, "cancelled");
+  });
+
+  it("preserves the first completedAt across duplicate completions", () => {
+    const originalNow = Date.now;
+    const times: number[] = [1000];
+    Date.now = () => times[times.length - 1];
+
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "done"));
+    const firstCompletedAt = registry.get("a1")?.completedAt;
+
+    times[0] = 2000;
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "done"));
+
+    assert.equal(registry.get("a1")?.completedAt, firstCompletedAt);
+
+    Date.now = originalNow;
+  });
+
+  it("fills a missing result without emitting a duplicate lifecycle event", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    const first = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, null));
+    const filled = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "filled result"));
+    const duplicate = registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "filled result"));
+
+    assert.equal(first?.type, "subagent_completed");
+    assert.equal(filled?.type, "subagent_completed");
+    assert.equal(duplicate, null);
+    assert.equal(registry.get("a1")?.result, "filled result");
+  });
+
+  it("does not revive a completed subagent on a later start event", () => {
+    const registry = new SubagentRegistry("s1", 1);
+    registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+    registry.processUpdate(subagentCompletedUpdate("a1", "a1", true, "done"));
+    const again = registry.processUpdate(subagentStartedUpdate("a1", "a1", "Run tests", "npm test"));
+
+    assert.equal(again, null);
+    assert.equal(registry.get("a1")?.status, "completed");
   });
 });
