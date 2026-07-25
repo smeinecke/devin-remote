@@ -1,5 +1,6 @@
 import type {
   ActiveOperation,
+  DirectoryEntry,
   DirectoryListingResponse,
   DirectoryValidationResponse,
   FilesystemRoot,
@@ -24,8 +25,44 @@ export class ApiResponseError<T = unknown> extends Error {
   }
 }
 
+export class InvalidApiPayloadError extends Error {
+  constructor(
+    public endpoint: string,
+    public payload: unknown,
+  ) {
+    super(`Invalid response from ${endpoint}`);
+  }
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isFilesystemRoot(value: unknown): value is FilesystemRoot {
+  return (
+    isObject(value) &&
+    typeof value.path === "string" &&
+    typeof value.label === "string"
+  );
+}
+
+function isBreadcrumb(value: unknown): value is { label: string; path: string } {
+  return (
+    isObject(value) &&
+    typeof value.label === "string" &&
+    typeof value.path === "string"
+  );
+}
+
+export function isDirectoryEntry(value: unknown): value is DirectoryEntry {
+  return (
+    isObject(value) &&
+    typeof value.name === "string" &&
+    typeof value.path === "string" &&
+    typeof value.hidden === "boolean" &&
+    typeof value.readable === "boolean" &&
+    typeof value.writable === "boolean"
+  );
 }
 
 export function isDirectoryListingResponse(value: unknown): value is DirectoryListingResponse {
@@ -33,13 +70,14 @@ export function isDirectoryListingResponse(value: unknown): value is DirectoryLi
     isObject(value) &&
     typeof value.path === "string" &&
     (typeof value.parent === "string" || value.parent === null) &&
-    isObject(value.root) &&
-    typeof (value.root as Record<string, unknown>).path === "string" &&
-    typeof (value.root as Record<string, unknown>).label === "string" &&
+    isFilesystemRoot(value.root) &&
     Array.isArray(value.breadcrumbs) &&
+    value.breadcrumbs.every(isBreadcrumb) &&
     Array.isArray(value.entries) &&
+    value.entries.every(isDirectoryEntry) &&
     typeof value.allowed === "boolean" &&
-    typeof value.writable === "boolean"
+    typeof value.writable === "boolean" &&
+    (value.errorCode === undefined || typeof value.errorCode === "string")
   );
 }
 
@@ -54,7 +92,8 @@ export function isDirectoryValidationResponse(value: unknown): value is Director
     typeof value.writable === "boolean" &&
     typeof value.allowed === "boolean" &&
     typeof value.gitRepository === "boolean" &&
-    (typeof value.branch === "string" || value.branch === null)
+    (typeof value.branch === "string" || value.branch === null) &&
+    (value.errorCode === undefined || typeof value.errorCode === "string")
   );
 }
 
@@ -93,6 +132,29 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   }
 
   return payload as T;
+}
+
+async function reqChecked<T>(
+  method: string,
+  url: string,
+  body: unknown | undefined,
+  guard: (value: unknown) => value is T,
+): Promise<T> {
+  const payload = await req<unknown>(method, url, body);
+
+  if (!guard(payload)) {
+    throw new InvalidApiPayloadError(url, payload);
+  }
+
+  return payload;
+}
+
+export function isFilesystemRootsResponse(value: unknown): value is { roots: FilesystemRoot[] } {
+  return (
+    isObject(value) &&
+    Array.isArray(value.roots) &&
+    value.roots.every(isFilesystemRoot)
+  );
 }
 
 export const api = {
@@ -169,21 +231,22 @@ export const api = {
     return (await res.json()) as UploadMeta;
   },
 
-  filesystemRoots: () => req<{ roots: FilesystemRoot[] }>("GET", "/api/filesystem/roots"),
+  filesystemRoots: () =>
+    reqChecked<{ roots: FilesystemRoot[] }>("GET", "/api/filesystem/roots", undefined, isFilesystemRootsResponse),
 
   filesystemRecent: () => req<{ recent: string[] }>("GET", "/api/filesystem/recent"),
 
   listDirectories: (path: string, showHidden = false) => {
     const q = new URLSearchParams({ path });
     if (showHidden) q.set("hidden", "true");
-    return req<DirectoryListingResponse>("GET", `/api/filesystem/directories?${q.toString()}`);
+    return reqChecked<DirectoryListingResponse>("GET", `/api/filesystem/directories?${q.toString()}`, undefined, isDirectoryListingResponse);
   },
 
   validateDirectory: (path: string) =>
-    req<DirectoryValidationResponse>("POST", "/api/filesystem/validate-directory", { path }),
+    reqChecked<DirectoryValidationResponse>("POST", "/api/filesystem/validate-directory", { path }, isDirectoryValidationResponse),
 
   createDirectory: (params: { parentPath: string; name: string }) =>
-    req<DirectoryValidationResponse>("POST", "/api/filesystem/create-directory", params),
+    reqChecked<DirectoryValidationResponse>("POST", "/api/filesystem/create-directory", params, isDirectoryValidationResponse),
 
   usage: () => req<UsageResponse>("GET", "/api/usage"),
 

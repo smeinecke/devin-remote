@@ -4,8 +4,10 @@ import {
   ApiResponseError,
   directoryListingFromError,
   directoryValidationFromError,
+  InvalidApiPayloadError,
   isDirectoryListingResponse,
   isDirectoryValidationResponse,
+  isFilesystemRoot,
 } from "./api";
 
 class FakeResponse {
@@ -279,5 +281,191 @@ describe("api request helper", () => {
     const err = new ApiResponseError("Not found", 404, payload);
     expect(directoryValidationFromError(err)?.errorCode).toBe("PATH_NOT_FOUND");
     expect(directoryValidationFromError(new Error("plain"))).toBeNull();
+  });
+
+  it("validates every nested element of a DirectoryListingResponse", () => {
+    expect(
+      isDirectoryListingResponse({
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace", label: "workspace" },
+        breadcrumbs: [{ label: "workspace", path: "/workspace" }],
+        entries: [
+          {
+            name: "src",
+            path: "/workspace/src",
+            hidden: false,
+            readable: true,
+            writable: true,
+          },
+        ],
+        allowed: true,
+        writable: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a breadcrumb with a missing path", () => {
+    expect(
+      isDirectoryListingResponse({
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace", label: "workspace" },
+        breadcrumbs: [{ label: "workspace" }],
+        entries: [],
+        allowed: true,
+        writable: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a directory entry with a missing writable field", () => {
+    expect(
+      isDirectoryListingResponse({
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace", label: "workspace" },
+        breadcrumbs: [],
+        entries: [
+          {
+            name: "src",
+            path: "/workspace/src",
+            hidden: false,
+            readable: true,
+          },
+        ],
+        allowed: true,
+        writable: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects an invalid root", () => {
+    expect(
+      isDirectoryListingResponse({
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace" },
+        breadcrumbs: [],
+        entries: [],
+        allowed: true,
+        writable: true,
+      }),
+    ).toBe(false);
+
+    expect(isFilesystemRoot({ path: "/workspace" })).toBe(false);
+  });
+
+  it("rejects a non-string optional errorCode", () => {
+    expect(
+      isDirectoryListingResponse({
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace", label: "workspace" },
+        breadcrumbs: [],
+        entries: [],
+        allowed: true,
+        writable: true,
+        errorCode: 123,
+      }),
+    ).toBe(false);
+
+    expect(
+      isDirectoryValidationResponse({
+        input: "/workspace",
+        resolvedPath: null,
+        exists: false,
+        isDirectory: false,
+        readable: false,
+        writable: false,
+        allowed: false,
+        gitRepository: false,
+        branch: null,
+        errorCode: 123,
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects malformed successful listings with InvalidApiPayloadError", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(true, 200, {
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace" },
+        breadcrumbs: [],
+        entries: [],
+        allowed: true,
+        writable: true,
+      }) as unknown as Response,
+    );
+
+    await expect(api.listDirectories("/workspace")).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(InvalidApiPayloadError);
+      expect((err as InvalidApiPayloadError).endpoint).toContain("/api/filesystem/directories");
+      return true;
+    });
+  });
+
+  it("rejects malformed successful validation responses with InvalidApiPayloadError", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(true, 200, {
+        input: "/workspace",
+        allowed: true,
+      }) as unknown as Response,
+    );
+
+    await expect(api.validateDirectory("/workspace")).rejects.toSatisfy((err: unknown) => {
+      expect(err).toBeInstanceOf(InvalidApiPayloadError);
+      expect((err as InvalidApiPayloadError).endpoint).toBe("/api/filesystem/validate-directory");
+      return true;
+    });
+  });
+
+  it("rejects malformed successful create responses with InvalidApiPayloadError", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(true, 200, {
+        ok: true,
+      }) as unknown as Response,
+    );
+
+    await expect(api.createDirectory({ parentPath: "/workspace", name: "new" })).rejects.toBeInstanceOf(
+      InvalidApiPayloadError,
+    );
+  });
+
+  it("rejects malformed successful roots responses with InvalidApiPayloadError", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(true, 200, {
+        roots: [{ path: "/workspace" }],
+      }) as unknown as Response,
+    );
+
+    await expect(api.filesystemRoots()).rejects.toBeInstanceOf(InvalidApiPayloadError);
+  });
+
+  it("returns a valid listing response", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(true, 200, {
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace", label: "workspace" },
+        breadcrumbs: [{ label: "workspace", path: "/workspace" }],
+        entries: [
+          {
+            name: "src",
+            path: "/workspace/src",
+            hidden: false,
+            readable: true,
+            writable: true,
+          },
+        ],
+        allowed: true,
+        writable: true,
+      }) as unknown as Response,
+    );
+
+    const listing = await api.listDirectories("/workspace");
+    expect(listing.path).toBe("/workspace");
+    expect(listing.entries[0]?.name).toBe("src");
   });
 });

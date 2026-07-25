@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, cleanup, waitFor, fireEvent } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import WorkspacePathField from "./WorkspacePathField";
-import { api } from "../api";
+import { api, InvalidApiPayloadError } from "../api";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const HOME = process.env.HOME ?? "/tmp";
@@ -12,17 +12,19 @@ describe("WorkspacePathField", () => {
 
   beforeEach(() => {
     cleanup();
-    validateSpy = vi.spyOn(api, "validateDirectory").mockResolvedValue({
-      input: "/workspace",
-      resolvedPath: "/workspace",
-      exists: true,
-      isDirectory: true,
-      readable: true,
-      writable: true,
-      allowed: true,
-      gitRepository: false,
-      branch: null,
-    });
+    validateSpy = vi.spyOn(api, "validateDirectory").mockImplementation((path: string) =>
+      Promise.resolve({
+        input: path,
+        resolvedPath: path,
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+      }),
+    );
     vi.spyOn(api, "listDirectories").mockResolvedValue({
       path: "/",
       parent: null,
@@ -49,6 +51,11 @@ describe("WorkspacePathField", () => {
     onValidationChange?: (v: any) => void;
   }) {
     const [value, setValue] = useState(props.value ?? "");
+    useEffect(() => {
+      if (props.value !== undefined) {
+        setValue(props.value);
+      }
+    }, [props.value]);
     return (
       <TooltipProvider delayDuration={0}>
         <WorkspacePathField
@@ -388,5 +395,231 @@ describe("WorkspacePathField", () => {
     });
 
     expect(screen.queryByText("✓")).toBeNull();
+  });
+
+  it("displays a recent-path validation that resolves immediately", async () => {
+    validateSpy.mockImplementation((path: string) =>
+      Promise.resolve({
+        input: path,
+        resolvedPath: path,
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+      }),
+    );
+
+    render(<Wrapper recentPaths={[`${HOME}/projects`]} />);
+
+    const recentBtn = screen.getByRole("button", { name: /Recent/i });
+    fireEvent.click(recentBtn);
+    fireEvent.click(screen.getByText("projects"));
+
+    await waitFor(() => {
+      expect(screen.getByText("✓")).not.toBeNull();
+    });
+
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    expect(input.value).toBe(`${HOME}/projects`);
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts one validation request for a programmatic selection", async () => {
+    render(<Wrapper recentPaths={[`${HOME}/projects`]} />);
+
+    const recentBtn = screen.getByRole("button", { name: /Recent/i });
+    fireEvent.click(recentBtn);
+    fireEvent.click(screen.getByText("projects"));
+
+    await waitFor(() => {
+      expect(validateSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does not duplicate validation when a recent selection is followed by blur", async () => {
+    render(<Wrapper recentPaths={[`${HOME}/projects`]} />);
+
+    const recentBtn = screen.getByRole("button", { name: /Recent/i });
+    fireEvent.click(recentBtn);
+    fireEvent.click(screen.getByText("projects"));
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledTimes(1));
+
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(screen.queryByText("Validating…")).toBeNull());
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("defaults to primary cwd and validates immediately", async () => {
+    render(<Wrapper primaryCwd="/workspace" />);
+
+    await waitFor(() => {
+      expect(validateSpy).toHaveBeenCalledWith("/workspace");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("✓")).not.toBeNull();
+    });
+  });
+
+  it("replaces validation when the controlled value changes externally", async () => {
+    const { rerender } = render(<Wrapper value="/first" />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/first"));
+
+    rerender(<Wrapper value="/second" />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/second"));
+  });
+
+  it("ignores a stale validation response after a later programmatic selection", async () => {
+    let resolveFirst: (value: any) => void = () => {};
+    let resolveSecond: (value: any) => void = () => {};
+    const onValidationChange = vi.fn();
+
+    validateSpy.mockImplementation((path: string) =>
+      new Promise((resolve) => {
+        if (path === "/first") resolveFirst = resolve;
+        else resolveSecond = resolve;
+      }),
+    );
+
+    render(<Wrapper value="/first" onValidationChange={onValidationChange} recentPaths={[`${HOME}/projects`]} />);
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/first"));
+
+    const recentBtn = screen.getByRole("button", { name: /Recent/i });
+    fireEvent.click(recentBtn);
+    fireEvent.click(screen.getByText("projects"));
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith(`${HOME}/projects`));
+
+    resolveFirst({
+      input: "/first",
+      resolvedPath: "/first",
+      exists: true,
+      isDirectory: true,
+      readable: true,
+      writable: true,
+      allowed: true,
+      gitRepository: false,
+      branch: null,
+    });
+
+    resolveSecond({
+      input: `${HOME}/projects`,
+      resolvedPath: `${HOME}/projects`,
+      exists: true,
+      isDirectory: true,
+      readable: true,
+      writable: true,
+      allowed: true,
+      gitRepository: false,
+      branch: null,
+    });
+
+    await waitFor(() => {
+      expect(onValidationChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ input: `${HOME}/projects` }),
+      );
+    });
+
+    const calls = onValidationChange.mock.calls.map((c) => c[0]?.input);
+    expect(calls).not.toContain("/first");
+  });
+
+  it("displays picker selection validation that resolves immediately", async () => {
+    validateSpy.mockImplementation((path: string) =>
+      Promise.resolve({
+        input: path,
+        resolvedPath: path,
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+      }),
+    );
+
+    vi.spyOn(api, "filesystemRoots").mockResolvedValue({ roots: [{ path: `${HOME}`, label: "Home" }] });
+    vi.spyOn(api, "listDirectories").mockImplementation((path: string) => {
+      if (path === `${HOME}/projects`) {
+        return Promise.resolve({
+          path: `${HOME}/projects`,
+          parent: `${HOME}`,
+          root: { path: `${HOME}`, label: "Home" },
+          breadcrumbs: [
+            { label: "Home", path: `${HOME}` },
+            { label: "projects", path: `${HOME}/projects` },
+          ],
+          entries: [],
+          allowed: true,
+          writable: true,
+        });
+      }
+      return Promise.resolve({
+        path: `${HOME}`,
+        parent: null,
+        root: { path: `${HOME}`, label: "Home" },
+        breadcrumbs: [{ label: "Home", path: `${HOME}` }],
+        entries: [
+          {
+            name: "projects",
+            path: `${HOME}/projects`,
+            hidden: false,
+            readable: true,
+            writable: true,
+          },
+        ],
+        allowed: true,
+        writable: true,
+      });
+    });
+
+    render(<Wrapper />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Browse/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /Select workspace/i })).not.toBeNull();
+    });
+    await waitFor(() => {
+      expect(screen.getByText("projects")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByText("projects"));
+    await waitFor(() => {
+      expect(screen.getByText("projects")).not.toBeNull();
+      expect(api.listDirectories).toHaveBeenCalledWith(`${HOME}/projects`, false);
+    });
+
+    const selectBtn = screen.getByRole("button", { name: /Select folder/i });
+    expect((selectBtn as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(selectBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /Select workspace/i })).toBeNull();
+    });
+
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    expect(input.value).toBe(`${HOME}/projects`);
+    expect(screen.getByText("✓")).not.toBeNull();
+  });
+
+  it("renders a safe message for a malformed server payload", async () => {
+    validateSpy.mockRejectedValue(new InvalidApiPayloadError("/api/filesystem/validate-directory", { bad: true }));
+
+    render(<Wrapper value="/workspace" />);
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("The server returned an invalid directory response.")).not.toBeNull();
+    });
   });
 });

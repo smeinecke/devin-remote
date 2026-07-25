@@ -649,6 +649,8 @@ export function validationErrorMessage(code: string): string {
       return "Symlink escapes workspace roots.";
     case "IO_ERROR":
       return "Could not read the directory.";
+    case "INVALID_API_RESPONSE":
+      return "The server returned an invalid directory response.";
     case "ROOTS_REQUEST_FAILED":
       return "Could not load workspace roots.";
     case "NO_WORKSPACE_ROOTS":

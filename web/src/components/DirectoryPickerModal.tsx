@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, directoryListingFromError, directoryValidationFromError } from "../api";
+import { api, directoryListingFromError, directoryValidationFromError, InvalidApiPayloadError } from "../api";
 import type { DirectoryListingResponse, FilesystemRoot } from "../types";
 import { shortenPath, validationErrorMessage } from "../utils";
 import { cn } from "@/lib/utils";
@@ -123,6 +123,19 @@ export default function DirectoryPickerModal({
       } catch (err) {
         if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
 
+        if (err instanceof InvalidApiPayloadError) {
+          setState((s) => ({
+            ...s,
+            listing: null,
+            loading: false,
+            error: {
+              code: "INVALID_API_RESPONSE",
+              message: validationErrorMessage("INVALID_API_RESPONSE"),
+            },
+          }));
+          return;
+        }
+
         const listing = directoryListingFromError(err);
         if (listing) {
           const error: PickerError | null = listing.errorCode
@@ -177,13 +190,14 @@ export default function DirectoryPickerModal({
         roots = res.roots;
       } catch (err) {
         if (epoch !== modalEpochRef.current) return;
+        const code = err instanceof InvalidApiPayloadError ? "INVALID_API_RESPONSE" : "ROOTS_REQUEST_FAILED";
         setState((s) => ({
           ...s,
           rootsLoading: false,
           loading: false,
           error: {
-            code: "ROOTS_REQUEST_FAILED",
-            message: validationErrorMessage("ROOTS_REQUEST_FAILED"),
+            code,
+            message: validationErrorMessage(code),
           },
         }));
         return;
@@ -314,7 +328,9 @@ export default function DirectoryPickerModal({
     } catch (err) {
       if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
       const payload = directoryValidationFromError(err);
-      const code = payload?.errorCode ?? "IO_ERROR";
+      const code = err instanceof InvalidApiPayloadError
+        ? "INVALID_API_RESPONSE"
+        : (payload?.errorCode ?? "IO_ERROR");
       setNewNameError(validationErrorMessage(code));
       isCreatingRef.current = false;
       setState((s) => ({ ...s, creating: false }));

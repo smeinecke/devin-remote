@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, directoryValidationFromError } from "../api";
+import { api, directoryValidationFromError, InvalidApiPayloadError } from "../api";
 import type { DirectoryValidationResponse } from "../types";
 import { basename, shortenPath, workspaceMeetsModeRequirements, validationErrorMessage } from "../utils";
 import { cn } from "@/lib/utils";
@@ -71,17 +71,17 @@ export default function WorkspacePathField({
     validationRef.current = validation;
   }, [validation]);
 
-  // Default the input to the primary cwd when the field is empty on first render.
-  useEffect(() => {
-    if (!defaultedRef.current && !value && primaryCwd) {
-      defaultedRef.current = true;
-      onChange(primaryCwd);
-    }
-  }, [value, primaryCwd, onChange]);
+  const clearValidation = useCallback(() => {
+    validationRef.current = null;
+    setValidation(null);
+    onValidationChange?.(null);
+    lastValidatedInputRef.current = null;
+  }, [onValidationChange]);
 
   const applyValidation = useCallback(
     (result: DirectoryValidationResponse | null, inputAtStart: string) => {
       if (inputAtStart !== valueRef.current) return;
+      validationRef.current = result;
       setValidation(result);
       onValidationChange?.(result);
       if (result) {
@@ -135,6 +135,9 @@ export default function WorkspacePathField({
             ...DEFAULT_INVALID,
             input: normalizedInput,
           };
+          if (err instanceof InvalidApiPayloadError) {
+            result.errorCode = "INVALID_API_RESPONSE";
+          }
           applyValidation(result, normalizedInput);
         } finally {
           if (activeValidationRef.current?.sequence === sequence) {
@@ -160,8 +163,7 @@ export default function WorkspacePathField({
     }
 
     if (validationRef.current && validationRef.current.input !== path) {
-      setValidation(null);
-      onValidationChange?.(null);
+      clearValidation();
     }
 
     if (!path.trim()) {
@@ -172,15 +174,60 @@ export default function WorkspacePathField({
     void runValidate(path);
   }
 
+  const commitPathValue = useCallback(
+    (
+      next: string,
+      options?: {
+        touched?: boolean;
+        validate?: boolean;
+      },
+    ) => {
+      if (next !== valueRef.current) {
+        valueRef.current = next;
+        ++validationSeq.current;
+        lastValidatedInputRef.current = null;
+
+        if (activeValidationRef.current && activeValidationRef.current.input !== next) {
+          activeValidationRef.current = null;
+        }
+
+        clearValidation();
+        onChange(next);
+      }
+
+      if (options?.touched !== undefined) {
+        setTouched(options.touched);
+      }
+
+      if (options?.validate) {
+        validateImmediately(next);
+      }
+    },
+    [onChange, clearValidation],
+  );
+
+  useEffect(() => {
+    if (!defaultedRef.current && !valueRef.current && primaryCwd) {
+      defaultedRef.current = true;
+      commitPathValue(primaryCwd, { touched: false, validate: true });
+    }
+  }, [primaryCwd, commitPathValue]);
+
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
 
-    setValidation((prev) => (prev && prev.input !== valueRef.current ? null : prev));
-
     const current = valueRef.current;
+    const stale = validationRef.current && validationRef.current.input !== current;
+    if (stale) {
+      lastValidatedInputRef.current = null;
+      validationRef.current = null;
+    }
+
+    setValidation((prev) => (prev && prev.input !== current ? null : prev));
+
     if (!current.trim()) {
       setValidating(false);
       setValidation(null);
@@ -240,16 +287,12 @@ export default function WorkspacePathField({
   }, [validating, usableValidation, check, value, mode]);
 
   const handleSelectRecent = (path: string) => {
-    onChange(path);
     setRecentOpen(false);
-    setTouched(true);
-    validateImmediately(path);
+    commitPathValue(path, { touched: true, validate: true });
   };
 
   const handlePickerSelect = (path: string) => {
-    onChange(path);
-    setTouched(true);
-    validateImmediately(path);
+    commitPathValue(path, { touched: true, validate: true });
   };
 
   useEffect(() => {
@@ -267,16 +310,7 @@ export default function WorkspacePathField({
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = e.target.value;
     if (next === valueRef.current) return;
-    valueRef.current = next;
-    onChange(next);
-    setTouched(false);
-    ++validationSeq.current;
-    lastValidatedInputRef.current = null;
-    if (activeValidationRef.current && activeValidationRef.current.input !== next) {
-      activeValidationRef.current = null;
-    }
-    setValidation(null);
-    onValidationChange?.(null);
+    commitPathValue(next, { touched: false });
   };
 
   const canCreate = check.allowed;
