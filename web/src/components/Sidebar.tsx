@@ -83,10 +83,18 @@ export default function Sidebar() {
     const dir = cwdInput.trim() || state.meta?.primaryCwd || "";
     if (!dir || creating || !canCreate) return;
     setCreating(true);
-    await createSession(dir);
-    setCreating(false);
-    setCwdInput("");
-    setValidation(null);
+    try {
+      const result = await createSession(dir);
+      if (!result) return;
+      setCwdInput(result.root);
+      if (result.root !== dir) {
+        setValidation(null);
+      }
+    } catch (err) {
+      showNotice(err instanceof Error ? err.message : "failed to create session");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const commitRename = async (id: string) => {

@@ -97,6 +97,27 @@ export function isDirectoryValidationResponse(value: unknown): value is Director
   );
 }
 
+function isCreateSessionResponse(value: unknown): value is {
+  sessionId: string;
+  processGeneration: number;
+  cwd: string;
+  root: string;
+  branch: string | null;
+  worktree: string | null;
+  modes: unknown;
+} {
+  return (
+    isObject(value) &&
+    typeof value.sessionId === "string" &&
+    typeof value.processGeneration === "number" &&
+    typeof value.cwd === "string" &&
+    typeof value.root === "string" &&
+    (value.branch === null || typeof value.branch === "string") &&
+    (value.worktree === null || typeof value.worktree === "string") &&
+    "modes" in value
+  );
+}
+
 export function directoryListingFromError(error: unknown): DirectoryListingResponse | null {
   if (!(error instanceof ApiResponseError)) return null;
   const payload = error.payload;
@@ -183,15 +204,7 @@ export const api = {
   listSessions: () => req<{ sessions: SessionSummary[] }>("GET", "/api/sessions"),
 
   createSession: (cwd: string, isolate?: boolean, mode?: string) =>
-    req<{
-      sessionId: string;
-      processGeneration: number;
-      cwd: string;
-      root: string;
-      branch: string | null;
-      worktree: string | null;
-      modes: unknown;
-    }>("POST", "/api/sessions", { cwd, isolate, mode }),
+    reqChecked("POST", "/api/sessions", { cwd, isolate, mode }, isCreateSessionResponse),
 
   attachSession: (sessionId: string) =>
     req<{ ok: boolean; status: string; processGeneration: number; sessionId: string; running: boolean; cancellable: boolean; activeOperation: ActiveOperation | null }>(

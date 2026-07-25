@@ -647,6 +647,8 @@ export function validationErrorMessage(code: string): string {
       return "Permission denied.";
     case "SYMLINK_ESCAPE":
       return "Symlink escapes workspace roots.";
+    case "DANGLING_SYMLINK":
+      return "Symlink does not resolve to a directory.";
     case "IO_ERROR":
       return "Could not read the directory.";
     case "INVALID_API_RESPONSE":

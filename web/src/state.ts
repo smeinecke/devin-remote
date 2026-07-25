@@ -195,14 +195,31 @@ export async function refreshMeta(): Promise<MetaResponse | null> {
   }
 }
 
-export async function createSession(cwd: string): Promise<void> {
+export interface CreatedSessionResult {
+  sessionId: string;
+  cwd: string;
+  root: string;
+  branch: string | null;
+  worktree: string | null;
+  processGeneration: number;
+}
+
+export async function createSession(cwd: string): Promise<CreatedSessionResult | null> {
   const dir = cwd.trim() || state.meta?.primaryCwd || "";
   if (!dir) {
     showNotice("no workspace directory — pass a cwd");
-    return;
+    return null;
   }
   try {
     const res = await api.createSession(dir, state.settings.worktreeIsolation, state.settings.defaultMode);
+    const result: CreatedSessionResult = {
+      sessionId: res.sessionId,
+      cwd: res.cwd,
+      root: res.root || res.cwd,
+      branch: res.branch,
+      worktree: res.worktree,
+      processGeneration: res.processGeneration,
+    };
     ensureSession({
       sessionId: res.sessionId,
       cwd: res.cwd,
@@ -225,12 +242,14 @@ export async function createSession(cwd: string): Promise<void> {
     const { defaultModel, defaultMode } = state.settings;
     if (defaultMode) void api.setConfig(res.sessionId, "mode", defaultMode).catch(() => undefined);
     if (defaultModel) void api.setConfig(res.sessionId, "model", defaultModel).catch(() => undefined);
-    if (state.meta && res.root) {
-      const next = [res.root, ...state.meta.workspaces.filter((w) => w !== res.root)].slice(0, 20);
+    if (state.meta && result.root) {
+      const next = [result.root, ...state.meta.workspaces.filter((w) => w !== result.root)].slice(0, 20);
       setState({ meta: { ...state.meta, workspaces: next } });
     }
+    return result;
   } catch (err) {
     showNotice(err instanceof Error ? err.message : "failed to create session");
+    return null;
   }
 }
 

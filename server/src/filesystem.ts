@@ -10,6 +10,7 @@
 
 import fs from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
+import type { Stats } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFile } from "node:child_process";
@@ -63,6 +64,7 @@ export type DirectoryErrorCode =
   | "OUTSIDE_ALLOWED_ROOT"
   | "PERMISSION_DENIED"
   | "SYMLINK_ESCAPE"
+  | "DANGLING_SYMLINK"
   | "IO_ERROR";
 
 export interface WorkspaceModeCheck {
@@ -170,27 +172,33 @@ export function isWithinRoot(root: string, candidate: string): boolean {
   );
 }
 
-async function isPathWithinAnyRoot(
-  candidate: string,
-  roots: string[],
-): Promise<{ allowed: boolean; root: string | null }> {
-  const best = await findBestRoot(candidate, roots);
-  return { allowed: best !== null, root: best };
-}
-
-async function findBestRoot(candidate: string, roots: string[]): Promise<string | null> {
-  const canonicalCandidate = await canonicalPath(candidate);
-  const matches: string[] = [];
-  for (const rawRoot of roots) {
+export async function canonicalRoots(roots: string[]): Promise<string[]> {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of roots) {
     try {
-      const root = await canonicalPath(rawRoot);
-      if (canonicalCandidate === root || isWithinRoot(root, canonicalCandidate)) {
-        matches.push(root);
-      }
+      const c = await canonicalPath(raw);
+      if (seen.has(c)) continue;
+      seen.add(c);
+      out.push(c);
     } catch {
       // Skip roots that cannot be canonicalised.
     }
   }
+  return out;
+}
+
+export function findLexicalRoot(lexicalCandidate: string, canonicalRootPaths: string[]): string | null {
+  const matches = canonicalRootPaths.filter(
+    (root) => lexicalCandidate === root || isWithinRoot(root, lexicalCandidate),
+  );
+  return matches.sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
+export function findCanonicalRoot(canonicalCandidate: string, canonicalRootPaths: string[]): string | null {
+  const matches = canonicalRootPaths.filter(
+    (root) => canonicalCandidate === root || isWithinRoot(root, canonicalCandidate),
+  );
   return matches.sort((a, b) => b.length - a.length)[0] ?? null;
 }
 
@@ -266,6 +274,7 @@ async function resolveAndCheck(
   input: string,
   roots: string[],
   options: { mustExist?: boolean; mustBeDirectory?: boolean; includeGit?: boolean } = {},
+  canonicalRootPathsArg?: string[],
 ): Promise<DirectoryValidationResponse> {
   if (typeof input !== "string" || hasNullBytes(input)) {
     return {
@@ -282,24 +291,184 @@ async function resolveAndCheck(
     };
   }
 
-  const resolved = path.resolve(input);
+  const lexicalPath = path.resolve(input);
+  const canonicalRootPaths = canonicalRootPathsArg ?? (await canonicalRoots(roots));
+
+  const lexicalRoot = findLexicalRoot(lexicalPath, canonicalRootPaths);
+  if (!lexicalRoot) {
+    return {
+      input,
+      resolvedPath: lexicalPath,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      allowed: false,
+      gitRepository: false,
+      branch: null,
+      errorCode: "OUTSIDE_ALLOWED_ROOT",
+    };
+  }
+
   let exists = false;
   let isDirectory = false;
-  let canonical: string | null = null;
+  let resolvedPath: string | null = null;
 
   try {
-    const stat = await fs.stat(resolved);
+    const stat = await fs.stat(lexicalPath);
     exists = true;
     isDirectory = stat.isDirectory();
-    canonical = await canonicalPath(resolved);
+    resolvedPath = await canonicalPath(lexicalPath);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      canonical = await canonicalPath(resolved);
+      let lstatCode: string | undefined;
+      let entry: Stats | null = null;
+      try {
+        entry = await fs.lstat(lexicalPath);
+      } catch (lstatErr) {
+        lstatCode = (lstatErr as NodeJS.ErrnoException).code;
+      }
+
+      if (entry?.isSymbolicLink()) {
+        // The final path component is a dangling symlink.
+        let linkLocation: string;
+        try {
+          linkLocation = await canonicalPath(lexicalPath);
+        } catch {
+          linkLocation = lexicalPath;
+        }
+
+        const canonicalRoot = findCanonicalRoot(linkLocation, canonicalRootPaths);
+        if (!canonicalRoot) {
+          return {
+            input,
+            resolvedPath: linkLocation,
+            exists: false,
+            isDirectory: false,
+            readable: false,
+            writable: false,
+            allowed: false,
+            gitRepository: false,
+            branch: null,
+            errorCode: "SYMLINK_ESCAPE",
+          };
+        }
+
+        let linkTarget: string;
+        try {
+          linkTarget = await fs.readlink(lexicalPath);
+        } catch (readErr) {
+          const readCode = (readErr as NodeJS.ErrnoException).code;
+          if (readCode === "EACCES" || readCode === "EPERM") {
+            return {
+              input,
+              resolvedPath: linkLocation,
+              exists: true,
+              isDirectory: false,
+              readable: false,
+              writable: false,
+              allowed: false,
+              gitRepository: false,
+              branch: null,
+              errorCode: "PERMISSION_DENIED",
+            };
+          }
+          return {
+            input,
+            resolvedPath: linkLocation,
+            exists: true,
+            isDirectory: false,
+            readable: false,
+            writable: false,
+            allowed: false,
+            gitRepository: false,
+            branch: null,
+            errorCode: "IO_ERROR",
+          };
+        }
+
+        const lexicalTarget = path.resolve(path.dirname(lexicalPath), linkTarget);
+        const lexicalTargetRoot = findLexicalRoot(lexicalTarget, canonicalRootPaths);
+        if (!lexicalTargetRoot) {
+          return {
+            input,
+            resolvedPath: lexicalTarget,
+            exists: false,
+            isDirectory: false,
+            readable: false,
+            writable: false,
+            allowed: false,
+            gitRepository: false,
+            branch: null,
+            errorCode: "SYMLINK_ESCAPE",
+          };
+        }
+
+        return {
+          input,
+          resolvedPath: linkLocation,
+          exists: true,
+          isDirectory: false,
+          readable: false,
+          writable: false,
+          allowed: true,
+          gitRepository: false,
+          branch: null,
+          errorCode: "DANGLING_SYMLINK",
+        };
+      }
+
+      if (lstatCode === "EACCES" || lstatCode === "EPERM") {
+        return {
+          input,
+          resolvedPath: lexicalPath,
+          exists: false,
+          isDirectory: false,
+          readable: false,
+          writable: false,
+          allowed: false,
+          gitRepository: false,
+          branch: null,
+          errorCode: "PERMISSION_DENIED",
+        };
+      }
+
+      try {
+        resolvedPath = await canonicalPath(lexicalPath);
+      } catch (canonicalErr) {
+        const canonicalCode = (canonicalErr as NodeJS.ErrnoException).code;
+        if (canonicalCode === "EACCES" || canonicalCode === "EPERM") {
+          return {
+            input,
+            resolvedPath: lexicalPath,
+            exists: false,
+            isDirectory: false,
+            readable: false,
+            writable: false,
+            allowed: false,
+            gitRepository: false,
+            branch: null,
+            errorCode: "PERMISSION_DENIED",
+          };
+        }
+        return {
+          input,
+          resolvedPath: lexicalPath,
+          exists: false,
+          isDirectory: false,
+          readable: false,
+          writable: false,
+          allowed: false,
+          gitRepository: false,
+          branch: null,
+          errorCode: "IO_ERROR",
+        };
+      }
     } else if (code === "EACCES" || code === "EPERM") {
       return {
         input,
-        resolvedPath: resolved,
+        resolvedPath: lexicalPath,
         exists: false,
         isDirectory: false,
         readable: false,
@@ -312,7 +481,7 @@ async function resolveAndCheck(
     } else {
       return {
         input,
-        resolvedPath: resolved,
+        resolvedPath: lexicalPath,
         exists: false,
         isDirectory: false,
         readable: false,
@@ -325,16 +494,13 @@ async function resolveAndCheck(
     }
   }
 
-  if (!canonical) canonical = resolved;
+  if (!resolvedPath) resolvedPath = lexicalPath;
 
-  const { allowed, root } = await isPathWithinAnyRoot(canonical, roots);
-
-  if (!allowed) {
-    const resolvedNoLinks = path.resolve(input);
-    const symlinkEscape = canonical !== resolvedNoLinks && !(await isPathWithinAnyRoot(resolvedNoLinks, roots)).allowed;
+  const canonicalRoot = findCanonicalRoot(resolvedPath, canonicalRootPaths);
+  if (!canonicalRoot) {
     return {
       input,
-      resolvedPath: canonical,
+      resolvedPath,
       exists,
       isDirectory,
       readable: false,
@@ -342,14 +508,14 @@ async function resolveAndCheck(
       allowed: false,
       gitRepository: false,
       branch: null,
-      errorCode: symlinkEscape ? "SYMLINK_ESCAPE" : "OUTSIDE_ALLOWED_ROOT",
+      errorCode: "SYMLINK_ESCAPE",
     };
   }
 
   if (options.mustExist && !exists) {
     return {
       input,
-      resolvedPath: canonical,
+      resolvedPath,
       exists: false,
       isDirectory: false,
       readable: false,
@@ -364,7 +530,7 @@ async function resolveAndCheck(
   if ((options.mustExist || exists) && !isDirectory) {
     return {
       input,
-      resolvedPath: canonical,
+      resolvedPath,
       exists,
       isDirectory: false,
       readable: false,
@@ -376,11 +542,11 @@ async function resolveAndCheck(
     };
   }
 
-  const readable = isDirectory ? await accessRead(canonical) : false;
+  const readable = isDirectory ? await accessRead(resolvedPath) : false;
   if (exists && isDirectory && !readable) {
     return {
       input,
-      resolvedPath: canonical,
+      resolvedPath,
       exists: true,
       isDirectory: true,
       readable: false,
@@ -392,15 +558,15 @@ async function resolveAndCheck(
     };
   }
 
-  const writable = isDirectory ? await accessWrite(canonical) : false;
+  const writable = isDirectory ? await accessWrite(resolvedPath) : false;
   const { repository: gitRepository, branch } =
     options.includeGit && exists && isDirectory
-      ? await cachedGitInfo(canonical)
+      ? await cachedGitInfo(resolvedPath)
       : { repository: false, branch: null };
 
   return {
     input,
-    resolvedPath: canonical,
+    resolvedPath,
     exists,
     isDirectory,
     readable,
@@ -428,7 +594,8 @@ export async function listDirectories(
   roots: string[],
   showHidden = false,
 ): Promise<DirectoryListingResponse> {
-  const validation = await resolveAndCheck(input, roots, { mustExist: true, mustBeDirectory: true });
+  const canonicalRootPaths = await canonicalRoots(roots);
+  const validation = await resolveAndCheck(input, roots, { mustExist: true, mustBeDirectory: true }, canonicalRootPaths);
 
   if (!validation.allowed || validation.errorCode) {
     return {
@@ -444,7 +611,7 @@ export async function listDirectories(
   }
 
   const dir = validation.resolvedPath!;
-  const bestRoot = (await findBestRoot(dir, roots)) ?? dir;
+  const bestRoot = findCanonicalRoot(dir, canonicalRootPaths) ?? dir;
   const rootObj: FilesystemRoot = { path: bestRoot, label: rootLabel(bestRoot) };
   const breadcrumbs = buildBreadcrumbs(dir, bestRoot);
   let entries: DirectoryEntry[] = [];
@@ -457,7 +624,7 @@ export async function listDirectories(
 
       const childPath = path.join(dir, item.name);
       const childCanonical = await canonicalPath(childPath);
-      const { allowed: childAllowed } = await isPathWithinAnyRoot(childCanonical, roots);
+      const childAllowed = findCanonicalRoot(childCanonical, canonicalRootPaths) !== null;
       if (!childAllowed) continue;
 
       let isDir = item.isDirectory();
@@ -626,7 +793,11 @@ export async function createDirectory(
       if (!existing.allowed) {
         return { ...existing, input: parentPath };
       }
-      if (existing.errorCode && existing.errorCode !== "NOT_A_DIRECTORY") {
+      if (
+        existing.errorCode &&
+        existing.errorCode !== "NOT_A_DIRECTORY" &&
+        existing.errorCode !== "DANGLING_SYMLINK"
+      ) {
         return { ...existing, input: parentPath };
       }
       return { ...existing, input: parentPath, errorCode: "PATH_ALREADY_EXISTS" };

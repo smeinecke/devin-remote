@@ -42,6 +42,7 @@ function httpStatusForErrorCode(code: string | undefined): number {
   switch (code) {
     case "INVALID_PATH":
     case "NOT_A_DIRECTORY":
+    case "DANGLING_SYMLINK":
       return 400;
     case "OUTSIDE_ALLOWED_ROOT":
     case "SYMLINK_ESCAPE":

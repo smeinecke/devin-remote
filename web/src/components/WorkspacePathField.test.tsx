@@ -622,4 +622,58 @@ describe("WorkspacePathField", () => {
       expect(screen.getByText("The server returned an invalid directory response.")).not.toBeNull();
     });
   });
+
+  it("does not re-apply the primary cwd while the user intentionally clears the field", async () => {
+    render(<Wrapper primaryCwd="/workspace" />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/workspace"));
+
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "" } });
+
+    await waitFor(() => expect(input.value).toBe(""));
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears parent validation when the controlled value changes externally", async () => {
+    const onValidationChange = vi.fn();
+    const { rerender } = render(<Wrapper value="/first" onValidationChange={onValidationChange} />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/first"));
+
+    rerender(<Wrapper value="/second" onValidationChange={onValidationChange} />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/second"));
+
+    const calls = onValidationChange.mock.calls.map((call) => {
+      const v = call[0] as { input?: string } | null;
+      return v?.input ?? v;
+    });
+    expect(calls).toContain(null);
+    expect(onValidationChange).toHaveBeenLastCalledWith(expect.objectContaining({ input: "/second" }));
+  });
+
+  it("does not duplicate validation during an external value reset", async () => {
+    const { rerender } = render(<Wrapper value="/first" />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/first"));
+
+    rerender(<Wrapper value="/second" />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/second"));
+
+    const calls = (validateSpy.mock.calls as [string][]).map((call) => call[0]);
+    expect(calls.filter((p) => p === "/second").length).toBe(1);
+  });
+
+  it("validates the canonical root when the parent sets it after creation", async () => {
+    const { rerender } = render(<Wrapper value="/first" />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/first"));
+
+    rerender(<Wrapper value="/canonical/root" />);
+
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/canonical/root"));
+    expect(validateSpy).toHaveBeenLastCalledWith("/canonical/root");
+  });
 });

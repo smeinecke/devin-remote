@@ -50,13 +50,14 @@ export default function WorkspacePathField({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const defaultedRef = useRef(false);
+  const lastAutoDefaultRef = useRef<string | null>(null);
   const validationSeq = useRef(0);
   const valueRef = useRef(value);
   const browseButtonRef = useRef<HTMLButtonElement>(null);
   const wasPickerOpenRef = useRef(false);
   const lastValidatedInputRef = useRef<string | null>(null);
   const validationRef = useRef(validation);
+  const previousReportedValidationRef = useRef<DirectoryValidationResponse | null>(validation);
   const activeValidationRef = useRef<{
     input: string;
     sequence: number;
@@ -71,24 +72,29 @@ export default function WorkspacePathField({
     validationRef.current = validation;
   }, [validation]);
 
+  useEffect(() => {
+    if (previousReportedValidationRef.current !== validation) {
+      previousReportedValidationRef.current = validation;
+      onValidationChange?.(validation);
+    }
+  }, [validation, onValidationChange]);
+
   const clearValidation = useCallback(() => {
     validationRef.current = null;
     setValidation(null);
-    onValidationChange?.(null);
     lastValidatedInputRef.current = null;
-  }, [onValidationChange]);
+  }, []);
 
   const applyValidation = useCallback(
     (result: DirectoryValidationResponse | null, inputAtStart: string) => {
       if (inputAtStart !== valueRef.current) return;
       validationRef.current = result;
       setValidation(result);
-      onValidationChange?.(result);
       if (result) {
         lastValidatedInputRef.current = inputAtStart;
       }
     },
-    [onValidationChange],
+    [],
   );
 
   const runValidate = useCallback(
@@ -205,8 +211,11 @@ export default function WorkspacePathField({
   );
 
   useEffect(() => {
-    if (!defaultedRef.current && !valueRef.current && primaryCwd) {
-      defaultedRef.current = true;
+    // Auto-default only once for a given primary cwd while the field is empty.
+    // The parent (Sidebar) explicitly rewrites the value after a successful
+    // session creation, so we do not fight the user when they clear the input.
+    if (!valueRef.current && primaryCwd && lastAutoDefaultRef.current !== primaryCwd) {
+      lastAutoDefaultRef.current = primaryCwd;
       commitPathValue(primaryCwd, { touched: false, validate: true });
     }
   }, [primaryCwd, commitPathValue]);
@@ -219,17 +228,12 @@ export default function WorkspacePathField({
 
     const current = valueRef.current;
     const stale = validationRef.current && validationRef.current.input !== current;
-    if (stale) {
-      lastValidatedInputRef.current = null;
-      validationRef.current = null;
-    }
-
-    setValidation((prev) => (prev && prev.input !== current ? null : prev));
-
-    if (!current.trim()) {
-      setValidating(false);
-      setValidation(null);
-      return;
+    if (stale || !current.trim()) {
+      clearValidation();
+      if (!current.trim()) {
+        setValidating(false);
+        return;
+      }
     }
 
     if (activeValidationRef.current?.input === current) return;
@@ -246,7 +250,7 @@ export default function WorkspacePathField({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [value, runValidate]);
+  }, [value, runValidate, clearValidation]);
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {

@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { api } from "./api";
-import { getState, dispatchEvent, selectSession, cancelPrompt } from "./state";
+import { getState, dispatchEvent, selectSession, cancelPrompt, createSession } from "./state";
 import type { SessionState, SubagentDescriptor } from "./store-types";
 
 function makeSession(sessionId: string, processGeneration: number): SessionState {
@@ -535,5 +535,82 @@ describe("lifecycle state reconstruction", () => {
     expect(s.activeOperation).toBeNull();
     const errorMessages = Object.values(s.messages).filter((m) => m.text.startsWith("**Error:**"));
     expect(errorMessages.length).toBe(0);
+  });
+});
+
+describe("createSession lifecycle", () => {
+  beforeEach(() => {
+    const state = getState();
+    state.activeSessionId = null;
+    state.sessions = {};
+    state.meta = { workspaces: [] } as any;
+    state.settings = { defaultMode: "ask", defaultModel: "default", worktreeIsolation: false } as any;
+    vi.spyOn(api, "setConfig").mockResolvedValue({ ok: true } as any);
+  });
+
+  afterEach(() => {
+    const state = getState();
+    state.activeSessionId = null;
+    state.sessions = {};
+    state.meta = null;
+    vi.restoreAllMocks();
+  });
+
+  const makeCreateResponse = (overrides?: Partial<ReturnType<typeof api.createSession>>) =>
+    Promise.resolve({
+      sessionId: "s-new",
+      cwd: "/worktree",
+      root: "/workspace",
+      branch: null,
+      worktree: "/worktree",
+      processGeneration: 1,
+      modes: null,
+      ...overrides,
+    } as any);
+
+  it("returns the server result on success", async () => {
+    vi.spyOn(api, "createSession").mockImplementation(() => makeCreateResponse());
+
+    const result = await createSession("/workspace");
+
+    expect(result).not.toBeNull();
+    expect(result?.sessionId).toBe("s-new");
+    expect(result?.root).toBe("/workspace");
+    expect(result?.cwd).toBe("/worktree");
+    expect(getState().activeSessionId).toBe("s-new");
+  });
+
+  it("returns null on handled failure", async () => {
+    vi.spyOn(api, "createSession").mockRejectedValue(new Error("workspace unavailable"));
+
+    const result = await createSession("/workspace");
+
+    expect(result).toBeNull();
+    expect(getState().notice).not.toBeNull();
+  });
+
+  it("does not insert a session on failure", async () => {
+    vi.spyOn(api, "createSession").mockRejectedValue(new Error("workspace unavailable"));
+
+    await createSession("/workspace");
+
+    expect(Object.keys(getState().sessions)).toHaveLength(0);
+  });
+
+  it("updates recent workspaces and active session on success", async () => {
+    vi.spyOn(api, "createSession").mockImplementation(() => makeCreateResponse());
+
+    await createSession("/workspace");
+
+    expect(getState().activeSessionId).toBe("s-new");
+    expect(getState().sessions["s-new"]).toBeDefined();
+    expect(getState().meta?.workspaces[0]).toBe("/workspace");
+  });
+
+  it("works when the return value is ignored", async () => {
+    vi.spyOn(api, "createSession").mockImplementation(() => makeCreateResponse());
+
+    await expect(createSession("/workspace")).resolves.toBeDefined();
+    expect(getState().activeSessionId).toBe("s-new");
   });
 });

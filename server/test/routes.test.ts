@@ -187,4 +187,67 @@ describe("filesystem route integration", () => {
     assert.strictEqual(status, 200);
     assert.strictEqual(typeof (body as any).gitRepository, "boolean");
   });
+
+  it("POST /api/filesystem/validate-directory symlink outside roots returns 403 OUTSIDE_ALLOWED_ROOT", async () => {
+    const outside = path.join(tmp, "outside-with-link");
+    const outsideLink = path.join(outside, "link-to-root");
+    await fs.mkdir(outside, { recursive: true });
+    await fs.symlink(root, outsideLink, "dir");
+    try {
+      const { status, body } = await request("POST", "/api/filesystem/validate-directory", { path: outsideLink });
+      assert.strictEqual(status, 403);
+      assert.strictEqual((body as any).errorCode, "OUTSIDE_ALLOWED_ROOT");
+    } finally {
+      await fs.rm(outsideLink, { force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("POST /api/filesystem/validate-directory contained escaping symlink returns 403 SYMLINK_ESCAPE", async () => {
+    const outside = path.join(tmp, "outside-escape");
+    await fs.mkdir(outside, { recursive: true });
+    const link = path.join(root, "escape-link");
+    await fs.symlink(outside, link, "dir");
+    try {
+      const { status, body } = await request("POST", "/api/filesystem/validate-directory", { path: link });
+      assert.strictEqual(status, 403);
+      assert.strictEqual((body as any).errorCode, "SYMLINK_ESCAPE");
+    } finally {
+      await fs.rm(link, { force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("POST /api/filesystem/create-directory dangling contained symlink returns 409 PATH_ALREADY_EXISTS", async () => {
+    const link = path.join(root, "dangling-contained");
+    await fs.symlink(path.join(root, "missing-child"), link, "dir");
+    try {
+      const { status, body } = await request("POST", "/api/filesystem/create-directory", {
+        parentPath: root,
+        name: "dangling-contained",
+      });
+      assert.strictEqual(status, 409);
+      assert.strictEqual((body as any).errorCode, "PATH_ALREADY_EXISTS");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("POST /api/filesystem/create-directory dangling escaping symlink returns 403 SYMLINK_ESCAPE", async () => {
+    const outside = path.join(tmp, "outside-dangling");
+    await fs.mkdir(outside, { recursive: true });
+    const link = path.join(root, "dangling-escape");
+    await fs.symlink(path.join(outside, "missing"), link, "dir");
+    try {
+      const { status, body } = await request("POST", "/api/filesystem/create-directory", {
+        parentPath: root,
+        name: "dangling-escape",
+      });
+      assert.strictEqual(status, 403);
+      assert.strictEqual((body as any).errorCode, "SYMLINK_ESCAPE");
+    } finally {
+      await fs.rm(link, { force: true });
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
 });

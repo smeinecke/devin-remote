@@ -647,4 +647,106 @@ describe("filesystem API", () => {
       await fs.chmod(target, 0o755).catch(() => {});
     }
   });
+
+  it("classifies a contained symlink to outside as SYMLINK_ESCAPE", async () => {
+    const link = path.join(dirs.root, "escape");
+    await fs.symlink(dirs.outside, link, "dir");
+    try {
+      const v = await validateDirectory(link, roots);
+      assert.strictEqual(v.allowed, false);
+      assert.strictEqual(v.errorCode, "SYMLINK_ESCAPE");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("classifies a symlink path outside every root as OUTSIDE_ALLOWED_ROOT", async () => {
+    const outsideLink = path.join(dirs.outside, "link-to-root");
+    await fs.symlink(dirs.root, outsideLink, "dir");
+    try {
+      const v = await validateDirectory(outsideLink, roots);
+      assert.strictEqual(v.allowed, false);
+      assert.strictEqual(v.errorCode, "OUTSIDE_ALLOWED_ROOT");
+    } finally {
+      await fs.rm(outsideLink, { force: true });
+    }
+  });
+
+  it("classifies a plain outside path as OUTSIDE_ALLOWED_ROOT", async () => {
+    const v = await validateDirectory(dirs.outside, roots);
+    assert.strictEqual(v.allowed, false);
+    assert.strictEqual(v.errorCode, "OUTSIDE_ALLOWED_ROOT");
+  });
+
+  it("classifies a contained symlink to a contained directory as allowed", async () => {
+    const target = path.join(dirs.root, "real-subdir");
+    const link = path.join(dirs.root, "link-to-subdir");
+    await fs.mkdir(target);
+    await fs.symlink(target, link, "dir");
+    try {
+      const v = await validateDirectory(link, roots);
+      assert.strictEqual(v.allowed, true);
+      assert.strictEqual(v.isDirectory, true);
+      assert.strictEqual(v.resolvedPath, target);
+    } finally {
+      await fs.rm(link, { force: true });
+      await fs.rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("returns DANGLING_SYMLINK for a contained dangling symlink", async () => {
+    const link = path.join(dirs.root, "dangling");
+    await fs.symlink(path.join(dirs.root, "missing-child"), link, "dir");
+    try {
+      const v = await validateDirectory(link, roots);
+      assert.strictEqual(v.allowed, true);
+      assert.strictEqual(v.exists, true);
+      assert.strictEqual(v.isDirectory, false);
+      assert.strictEqual(v.errorCode, "DANGLING_SYMLINK");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("createDirectory returns PATH_ALREADY_EXISTS for a dangling contained symlink", async () => {
+    const link = path.join(dirs.root, "dangling-contained");
+    await fs.symlink(path.join(dirs.root, "missing-child"), link, "dir");
+    try {
+      const result = await createDirectory(dirs.root, "dangling-contained", roots);
+      assert.strictEqual(result.allowed, true);
+      assert.strictEqual(result.errorCode, "PATH_ALREADY_EXISTS");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("createDirectory returns SYMLINK_ESCAPE for a dangling escaping symlink", async () => {
+    const link = path.join(dirs.root, "dangling-escape");
+    await fs.symlink(path.join(dirs.outside, "missing"), link, "dir");
+    try {
+      const result = await createDirectory(dirs.root, "dangling-escape", roots);
+      assert.strictEqual(result.allowed, false);
+      assert.strictEqual(result.errorCode, "SYMLINK_ESCAPE");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("revalidates a race-created dangling escaping symlink as SYMLINK_ESCAPE", async () => {
+    const name = "race-dangling-escape";
+    const target = path.join(dirs.root, name);
+    const result = await createDirectory(dirs.root, name, roots, {
+      deps: {
+        mkdir: async (p: string) => {
+          await fs.symlink(path.join(dirs.outside, "missing"), p, "dir");
+          const err = new Error("EEXIST") as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        },
+      },
+    });
+    assert.strictEqual(result.allowed, false);
+    assert.strictEqual(result.errorCode, "SYMLINK_ESCAPE");
+    await fs.rm(target, { force: true });
+  });
 });
