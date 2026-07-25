@@ -34,6 +34,8 @@ export interface DirectoryEntry {
 export interface DirectoryListingResponse {
   path: string;
   parent: string | null;
+  root: FilesystemRoot;
+  breadcrumbs: { label: string; path: string }[];
   entries: DirectoryEntry[];
   allowed: boolean;
   writable: boolean;
@@ -176,14 +178,39 @@ async function isPathWithinAnyRoot(
   candidate: string,
   roots: string[],
 ): Promise<{ allowed: boolean; root: string | null }> {
+  const best = await findBestRoot(candidate, roots);
+  return { allowed: best !== null, root: best };
+}
+
+async function findBestRoot(candidate: string, roots: string[]): Promise<string | null> {
   const canonicalCandidate = await canonicalPath(candidate);
+  const matches: string[] = [];
   for (const rawRoot of roots) {
-    const root = await canonicalPath(rawRoot);
-    if (isWithinRoot(root, canonicalCandidate)) {
-      return { allowed: true, root };
+    try {
+      const root = await canonicalPath(rawRoot);
+      if (canonicalCandidate === root || isWithinRoot(root, canonicalCandidate)) {
+        matches.push(root);
+      }
+    } catch {
+      // Skip roots that cannot be canonicalised.
     }
   }
-  return { allowed: false, root: null };
+  return matches.sort((a, b) => b.length - a.length)[0] ?? null;
+}
+
+function buildBreadcrumbs(dir: string, root: string | null): { label: string; path: string }[] {
+  if (!root) return [{ label: path.basename(dir) || dir, path: dir }];
+
+  const relative = path.relative(root, dir);
+  const segments = relative === "" ? [] : relative.split(path.sep).filter(Boolean);
+  const out: { label: string; path: string }[] = [{ label: path.basename(root) || root, path: root }];
+  let built = root;
+
+  for (const segment of segments) {
+    built = path.join(built, segment);
+    out.push({ label: segment, path: built });
+  }
+  return out;
 }
 
 async function accessRead(p: string): Promise<boolean> {
@@ -376,6 +403,8 @@ export async function listDirectories(
     return {
       path: input,
       parent: null,
+      root: { path: "", label: "" },
+      breadcrumbs: [],
       entries: [],
       allowed: validation.allowed,
       writable: false,
@@ -384,6 +413,9 @@ export async function listDirectories(
   }
 
   const dir = validation.resolvedPath!;
+  const bestRoot = (await findBestRoot(dir, roots)) ?? dir;
+  const rootObj: FilesystemRoot = { path: bestRoot, label: rootLabel(bestRoot) };
+  const breadcrumbs = buildBreadcrumbs(dir, bestRoot);
   let entries: DirectoryEntry[] = [];
   const writable = await accessWrite(dir).catch(() => false);
 
@@ -421,6 +453,8 @@ export async function listDirectories(
     return {
       path: dir,
       parent: null,
+      root: rootObj,
+      breadcrumbs,
       entries: [],
       allowed: true,
       writable: false,
@@ -441,6 +475,8 @@ export async function listDirectories(
   return {
     path: dir,
     parent: parentEntry,
+    root: rootObj,
+    breadcrumbs,
     entries,
     allowed: true,
     writable,
@@ -603,4 +639,58 @@ export async function listRoots(primaryCwd: string, store: Store, env?: NodeJS.P
   }
 
   return out;
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+}
+
+export async function listRecentWorkspaces(
+  primaryCwd: string,
+  store: Store,
+  env?: NodeJS.ProcessEnv,
+  max = 20,
+): Promise<string[]> {
+  const roots = getAllowedRoots(primaryCwd, store, env);
+  const seen = new Set<string>();
+  const recent: string[] = [];
+
+  const add = async (raw: string) => {
+    if (!raw || seen.has(raw)) return;
+    const v = await validateDirectory(raw, roots);
+    if (!v.allowed || !v.exists || !v.isDirectory || !v.readable || !v.resolvedPath) return;
+    const canonical = v.resolvedPath;
+    if (seen.has(canonical)) return;
+    seen.add(canonical);
+    recent.push(canonical);
+  };
+
+  // Canonicalise the stored MRU list and persist the cleaned version.
+  const cleaned: string[] = [];
+  for (const w of store.workspaces()) {
+    const v = await validateDirectory(w, roots);
+    if (!v.allowed || !v.exists || !v.isDirectory || !v.readable || !v.resolvedPath) continue;
+    const canonical = v.resolvedPath;
+    if (cleaned.includes(canonical)) continue;
+    cleaned.push(canonical);
+  }
+  if (!arraysEqual(store.workspaces(), cleaned)) {
+    store.setWorkspaces(cleaned);
+  }
+
+  await add(primaryCwd);
+  for (const w of cleaned) await add(w);
+
+  const sessions = Object.values(store.sessions()).sort((a, b) =>
+    (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""),
+  );
+  for (const s of sessions) {
+    if (!s) continue;
+    // Exclude generated worktrees; the base root is already in workspaces.
+    if (s.worktree && s.cwd === s.worktree) continue;
+    await add(s.cwd);
+  }
+
+  return recent.slice(0, max);
 }

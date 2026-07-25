@@ -225,6 +225,10 @@ export async function createSession(cwd: string): Promise<void> {
     const { defaultModel, defaultMode } = state.settings;
     if (defaultMode) void api.setConfig(res.sessionId, "mode", defaultMode).catch(() => undefined);
     if (defaultModel) void api.setConfig(res.sessionId, "model", defaultModel).catch(() => undefined);
+    if (state.meta && res.root) {
+      const next = [res.root, ...state.meta.workspaces.filter((w) => w !== res.root)].slice(0, 20);
+      setState({ meta: { ...state.meta, workspaces: next } });
+    }
   } catch (err) {
     showNotice(err instanceof Error ? err.message : "failed to create session");
   }
@@ -259,6 +263,10 @@ export async function clearSession(sessionId: string): Promise<void> {
     });
     setState({ activeSessionId: res.sessionId, ui: { ...state.ui, sidebarOpen: false } });
     subscribeSession(res.sessionId, res.processGeneration, 0);
+    if (state.meta && res.root) {
+      const next = [res.root, ...state.meta.workspaces.filter((w) => w !== res.root)].slice(0, 20);
+      setState({ meta: { ...state.meta, workspaces: next } });
+    }
     const modelOpt = s.configOptions.find((o) => o.category === "model");
     if (s.currentModeId) {
       await setSessionConfig(res.sessionId, "mode", s.currentModeId);

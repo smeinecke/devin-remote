@@ -12,6 +12,7 @@ import {
   createDirectory,
   rootLabel,
   checkWorkspaceForMode,
+  listRecentWorkspaces,
 } from "../src/filesystem.js";
 
 function fakeStore(workspaces: string[] = []) {
@@ -281,5 +282,72 @@ describe("filesystem API", () => {
     assert.strictEqual(checkWorkspaceForMode(readonly, "plan").allowed, false);
     assert.strictEqual(checkWorkspaceForMode(readonly, "ask", true).allowed, false);
     assert.strictEqual(checkWorkspaceForMode(invalid, "ask").allowed, false);
+  });
+
+  it("returns the matched root and breadcrumbs for an allowed directory", async () => {
+    const listing = await listDirectories(dirs.nested, roots);
+    assert.strictEqual(listing.allowed, true);
+    assert.ok(listing.root);
+    assert.strictEqual(listing.root.path, dirs.root);
+    assert.strictEqual(listing.root.label, rootLabel(dirs.root));
+    assert.deepStrictEqual(listing.breadcrumbs, [
+      { label: path.basename(dirs.root), path: dirs.root },
+      { label: "projects", path: path.join(dirs.root, "projects") },
+      { label: "devin-remote", path: dirs.nested },
+    ]);
+  });
+
+  it("chooses the longest overlapping root", async () => {
+    const nestedRoot = dirs.nested;
+    const multiRoots = [dirs.root, nestedRoot];
+    const target = path.join(dirs.nested, "packages");
+    const listing = await listDirectories(target, multiRoots);
+    assert.strictEqual(listing.allowed, true);
+    assert.strictEqual(listing.root.path, nestedRoot);
+    assert.deepStrictEqual(listing.breadcrumbs, [
+      { label: path.basename(nestedRoot), path: nestedRoot },
+      { label: "packages", path: target },
+    ]);
+  });
+
+  it("breadcrumbs never contain paths outside the matched root", async () => {
+    const nestedRoot = dirs.nested;
+    const multiRoots = [dirs.root, nestedRoot];
+    const target = path.join(dirs.nested, "packages");
+    const listing = await listDirectories(target, multiRoots);
+    for (const crumb of listing.breadcrumbs) {
+      assert.ok(
+        isWithinRoot(listing.root.path, crumb.path),
+        `breadcrumb ${crumb.path} is outside root ${listing.root.path}`,
+      );
+    }
+  });
+
+  it("recent workspaces are canonical, deduplicated, and exclude generated worktrees", async () => {
+    const primary = path.join(dirs.tmp, "primary");
+    const base = path.join(dirs.root, "base");
+    const linkToBase = path.join(dirs.tmp, "link-to-base");
+    const worktree = path.join(dirs.tmp, "worktree");
+    const file = path.join(dirs.tmp, "file");
+    const missing = path.join(dirs.tmp, "missing");
+    await fs.mkdir(primary, { recursive: true });
+    await fs.mkdir(base, { recursive: true });
+    await fs.mkdir(worktree, { recursive: true });
+    await fs.symlink(base, linkToBase, "dir");
+    await fs.writeFile(file, "x");
+
+    const setWorkspaces: string[] = [];
+    const store = {
+      workspaces: () => [linkToBase, base, missing, file, primary],
+      sessions: () => ({
+        s1: { cwd: worktree, worktree, updatedAt: "2026-01-01T00:00:00Z" },
+        s2: { cwd: base, worktree: null, updatedAt: "2026-01-02T00:00:00Z" },
+      }),
+      setWorkspaces: (w: string[]) => setWorkspaces.push(...w),
+    } as any;
+
+    const recent = await listRecentWorkspaces(primary, store, { DEVIN_REMOTE_WORKSPACE_ROOTS: "" });
+    assert.deepStrictEqual(recent, [primary, base]);
+    assert.deepStrictEqual(setWorkspaces, [base, primary]);
   });
 });

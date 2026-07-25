@@ -13,6 +13,7 @@ import {
   getAllowedRoots,
   listRoots,
   listDirectories,
+  listRecentWorkspaces,
   validateDirectory,
   createDirectory,
   checkWorkspaceForMode,
@@ -113,7 +114,7 @@ export async function handleApi(
       return json(res, 200, {
         app: { name: "devin-remote", version: ctx.appVersion },
         devin: await ctx.devinCheck(),
-        workspaces: ctx.store.workspaces(),
+        workspaces: await listRecentWorkspaces(ctx.primaryCwd, ctx.store),
         processes: ctx.registry.status(),
         settings: ctx.store.settings,
         primaryCwd: ctx.primaryCwd,
@@ -189,6 +190,7 @@ export async function handleApi(
           sessionId: created.sessionId,
           processGeneration: created.processGeneration,
           cwd,
+          root: worktreeInfo.root,
           branch: worktreeInfo.branch || null,
           worktree: worktreeInfo.worktree,
           modes: created.modes ?? null,
@@ -400,6 +402,11 @@ export async function handleApi(
     if (m === "GET" && url.pathname === "/api/filesystem/roots") {
       const roots = await listRoots(ctx.primaryCwd, ctx.store);
       return json(res, 200, { roots });
+    }
+
+    if (m === "GET" && url.pathname === "/api/filesystem/recent") {
+      const recent = await listRecentWorkspaces(ctx.primaryCwd, ctx.store);
+      return json(res, 200, { recent });
     }
 
     if (m === "GET" && url.pathname === "/api/filesystem/directories") {

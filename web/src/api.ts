@@ -39,7 +39,15 @@ export const api = {
   listSessions: () => req<{ sessions: SessionSummary[] }>("GET", "/api/sessions"),
 
   createSession: (cwd: string, isolate?: boolean, mode?: string) =>
-    req<{ sessionId: string; processGeneration: number; cwd: string; branch: string | null; worktree: string | null; modes: unknown }>("POST", "/api/sessions", { cwd, isolate, mode }),
+    req<{
+      sessionId: string;
+      processGeneration: number;
+      cwd: string;
+      root: string;
+      branch: string | null;
+      worktree: string | null;
+      modes: unknown;
+    }>("POST", "/api/sessions", { cwd, isolate, mode }),
 
   attachSession: (sessionId: string) =>
     req<{ ok: boolean; status: string; processGeneration: number; sessionId: string; running: boolean; cancellable: boolean; activeOperation: ActiveOperation | null }>(
@@ -100,6 +108,8 @@ export const api = {
   },
 
   filesystemRoots: () => req<{ roots: FilesystemRoot[] }>("GET", "/api/filesystem/roots"),
+
+  filesystemRecent: () => req<{ recent: string[] }>("GET", "/api/filesystem/recent"),
 
   listDirectories: (path: string, showHidden = false) => {
     const q = new URLSearchParams({ path });

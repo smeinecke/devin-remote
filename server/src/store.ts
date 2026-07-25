@@ -164,11 +164,21 @@ export class Store {
   }
 
   addWorkspace(cwd: string) {
-    const list = this.data.workspaces.filter((w) => w !== cwd);
-    list.unshift(cwd);
+    const normalised = cwd.replace(/[/\\]+$/, "");
+    const list = this.data.workspaces.filter((w) => w !== normalised);
+    list.unshift(normalised);
     if (list.length > 20) list.length = 20;
     this.data.workspaces = list;
     this.save();
+  }
+
+  setWorkspaces(workspaces: string[]) {
+    this.data.workspaces = workspaces.slice(0, 20);
+    this.save();
+  }
+
+  sessions(): Record<string, SessionMetadata> {
+    return this.data.sessions;
   }
 
   session(sessionId: string): SessionMetadata | undefined {

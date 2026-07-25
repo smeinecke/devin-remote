@@ -169,6 +169,12 @@ export default function WorkspacePathField({
     void runValidate(path);
   };
 
+  useEffect(() => {
+    if (!open) {
+      browseButtonRef.current?.focus();
+    }
+  }, [open]);
+
   const handleBlur = () => {
     setTouched(true);
     setValidation((prev) => (prev && prev.input !== valueRef.current ? null : prev));

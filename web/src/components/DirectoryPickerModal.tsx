@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import type { DirectoryEntry, DirectoryListingResponse, FilesystemRoot } from "../types";
+import type { DirectoryListingResponse, FilesystemRoot } from "../types";
 import { shortenPath, validationErrorMessage } from "../utils";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -45,7 +45,6 @@ interface PickerState {
   listingForPath: string | null;
   roots: FilesystemRoot[];
   rootsLoading: boolean;
-  rootsError: PickerError | null;
   loading: boolean;
   creating: boolean;
   showHidden: boolean;
@@ -67,7 +66,6 @@ export default function DirectoryPickerModal({
     listingForPath: null,
     roots: [],
     rootsLoading: false,
-    rootsError: null,
     loading: false,
     creating: false,
     showHidden: false,
@@ -75,33 +73,38 @@ export default function DirectoryPickerModal({
   });
   const [newName, setNewName] = useState("");
   const [newNameError, setNewNameError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const loadSeq = useRef(0);
-  const openSeq = useRef(0);
 
-  const setPartial = useCallback((partial: Partial<PickerState>) => {
-    setState((s) => ({ ...s, ...partial }));
-  }, []);
+  const modalEpochRef = useRef(0);
+  const loadSequenceRef = useRef(0);
+  const createSequenceRef = useRef(0);
+  const showHiddenRef = useRef(false);
+  const wasOpenRef = useRef(false);
+  const isCreatingRef = useRef(false);
 
   const loadDirectory = useCallback(
-    async (path: string) => {
-      const seq = ++loadSeq.current;
+    async (
+      requestedPath: string,
+      options?: { showHidden?: boolean; modalEpoch?: number },
+    ) => {
+      const seq = ++loadSequenceRef.current;
+      const capturedEpoch = options?.modalEpoch ?? modalEpochRef.current;
+      const showHidden = options?.showHidden ?? showHiddenRef.current;
+
+      if (capturedEpoch !== modalEpochRef.current) return;
 
       setState((s) => ({
         ...s,
-        inputPath: path,
-        requestedPath: path,
+        inputPath: requestedPath,
+        requestedPath: requestedPath,
         loading: true,
         error: null,
-        // Clear stale listings so Select cannot use an old directory.
         listing: null,
         listingForPath: null,
       }));
 
       try {
-        const listing = await api.listDirectories(path, state.showHidden);
-        if (seq !== loadSeq.current) return;
+        const listing = await api.listDirectories(requestedPath, showHidden);
+        if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
 
         const error: PickerError | null = listing.errorCode
           ? { code: listing.errorCode, message: validationErrorMessage(listing.errorCode) }
@@ -117,31 +120,33 @@ export default function DirectoryPickerModal({
           error,
         }));
       } catch (err) {
-        if (seq !== loadSeq.current) return;
+        if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
         setState((s) => ({
           ...s,
           listing: null,
           listingForPath: null,
           loading: false,
           error: {
-            code: "IO_ERROR",
-            message: err instanceof Error ? err.message : "Failed to load directory",
+            code: "DIRECTORY_LOAD_FAILED",
+            message: validationErrorMessage("DIRECTORY_LOAD_FAILED"),
           },
         }));
       }
     },
-    [state.showHidden],
+    [],
   );
 
   const initialize = useCallback(
-    async (preferred: string) => {
-      const seq = ++openSeq.current;
-      loadSeq.current++;
+    async (epoch: number, preferred: string) => {
+      if (epoch !== modalEpochRef.current) return;
+
+      loadSequenceRef.current++;
 
       setState((s) => ({
         ...s,
+        inputPath: preferred,
+        requestedPath: preferred,
         rootsLoading: true,
-        rootsError: null,
         loading: true,
         error: null,
         listing: null,
@@ -153,20 +158,20 @@ export default function DirectoryPickerModal({
         const res = await api.filesystemRoots();
         roots = res.roots;
       } catch (err) {
-        if (seq !== openSeq.current) return;
+        if (epoch !== modalEpochRef.current) return;
         setState((s) => ({
           ...s,
           rootsLoading: false,
-          rootsError: {
-            code: "IO_ERROR",
-            message: err instanceof Error ? err.message : "Failed to load workspace roots",
-          },
           loading: false,
+          error: {
+            code: "ROOTS_REQUEST_FAILED",
+            message: validationErrorMessage("ROOTS_REQUEST_FAILED"),
+          },
         }));
         return;
       }
 
-      if (seq !== openSeq.current) return;
+      if (epoch !== modalEpochRef.current) return;
 
       if (roots.length === 0) {
         setState((s) => ({
@@ -187,47 +192,44 @@ export default function DirectoryPickerModal({
       if (preferred.trim()) {
         try {
           const validation = await api.validateDirectory(preferred);
-          if (seq !== openSeq.current) return;
+          if (epoch !== modalEpochRef.current) return;
           if (validation.allowed && validation.resolvedPath) {
-            await loadDirectory(validation.resolvedPath);
+            await loadDirectory(validation.resolvedPath, { modalEpoch: epoch });
             return;
           }
         } catch {
           // fall through to first root
         }
+        if (epoch !== modalEpochRef.current) return;
       }
 
-      if (seq !== openSeq.current) return;
-      await loadDirectory(roots[0].path);
+      await loadDirectory(roots[0].path, { modalEpoch: epoch });
     },
     [loadDirectory],
   );
 
   useEffect(() => {
-    if (!open) {
-      // Closing invalidates any in-flight load/open sequences.
-      loadSeq.current++;
-      openSeq.current++;
-      return;
+    if (open) {
+      if (!wasOpenRef.current) {
+        const epoch = ++modalEpochRef.current;
+        setNewName("");
+        setNewNameError(null);
+        void initialize(epoch, initialPath);
+      }
+    } else {
+      // Closing invalidates any in-flight work for this modal instance.
+      modalEpochRef.current++;
+      loadSequenceRef.current++;
+      createSequenceRef.current++;
+      isCreatingRef.current = false;
+      setState((s) => ({ ...s, loading: false, creating: false }));
     }
-    setNewName("");
-    setNewNameError(null);
-    void initialize(initialPath);
+    wasOpenRef.current = open;
   }, [open, initialPath, initialize]);
 
-  useEffect(() => {
-    if (!open) return;
-    // showHidden changed: reload the current canonical directory.
-    const current = state.listingForPath ?? state.requestedPath;
-    if (current) {
-      void loadDirectory(current);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.showHidden]);
-
   const navigateTo = useCallback(
-    (path: string) => {
-      void loadDirectory(path);
+    (target: string) => {
+      void loadDirectory(target);
     },
     [loadDirectory],
   );
@@ -242,6 +244,17 @@ export default function DirectoryPickerModal({
     if (current) void loadDirectory(current);
   }, [state.listingForPath, state.inputPath, loadDirectory]);
 
+  const handleRetry = useCallback(() => {
+    const code = state.error?.code;
+    if (code === "ROOTS_REQUEST_FAILED" || code === "NO_WORKSPACE_ROOTS") {
+      const epoch = ++modalEpochRef.current;
+      void initialize(epoch, state.inputPath ?? initialPath);
+    } else {
+      const current = state.listingForPath ?? state.inputPath;
+      if (current) void loadDirectory(current);
+    }
+  }, [state.error, state.inputPath, state.listingForPath, initialPath, initialize, loadDirectory]);
+
   const handleCreate = useCallback(async () => {
     const name = newName.trim();
     if (!name || name.includes("/") || name.includes("\\") || name === "." || name === "..") {
@@ -249,27 +262,42 @@ export default function DirectoryPickerModal({
       return;
     }
 
-    const currentDir = state.listing?.path;
-    if (!currentDir) {
-      setNewNameError("No current directory");
+    const parentPath = state.listing?.path;
+    if (!parentPath || !state.listing?.writable || state.creating) {
+      setNewNameError("Cannot create folder here");
       return;
     }
 
-    const target = `${currentDir.replace(/[/\\]+$/, "")}/${name}`;
-    setPartial({ creating: true });
+    if (isCreatingRef.current) return;
+    isCreatingRef.current = true;
+
+    const createSeq = ++createSequenceRef.current;
+    const capturedEpoch = modalEpochRef.current;
+
+    setState((s) => ({ ...s, creating: true }));
     setNewNameError(null);
+
+    const target = `${parentPath.replace(/[/\\]+$/, "")}/${name}`;
+
     try {
       const result = await api.createDirectory(target);
-      if (result.exists && result.isDirectory && result.allowed) {
+      if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
+
+      if (result.allowed && result.exists && result.isDirectory) {
         setNewName("");
-        await loadDirectory(currentDir);
+        await loadDirectory(parentPath, { modalEpoch: capturedEpoch });
       } else {
         setNewNameError(validationErrorMessage(result.errorCode ?? "IO_ERROR"));
       }
     } catch (err) {
-      setNewNameError(err instanceof Error ? err.message : "Failed to create directory");
+      if (createSeq === createSequenceRef.current && capturedEpoch === modalEpochRef.current) {
+        setNewNameError("Failed to create directory");
+      }
     } finally {
-      setPartial({ creating: false });
+      if (createSeq === createSequenceRef.current && capturedEpoch === modalEpochRef.current) {
+        isCreatingRef.current = false;
+        setState((s) => ({ ...s, creating: false }));
+      }
     }
   }, [newName, state.listing, loadDirectory]);
 
@@ -281,14 +309,13 @@ export default function DirectoryPickerModal({
     if (state.inputPath !== state.requestedPath) return false;
     if (state.listing.path !== state.requestedPath) return false;
     if (state.listingForPath !== state.requestedPath) return false;
-    // A successful listing means the directory exists and is readable.
     const needsWritable = worktreeIsolation || mode !== "ask";
     if (needsWritable && !state.listing.writable) return false;
     return true;
   }, [state, mode, worktreeIsolation]);
 
   const canCreateFolder = useMemo(() => {
-    if (state.loading || state.creating) return false;
+    if (state.loading) return false;
     if (state.error || !state.listing) return false;
     if (state.listing.errorCode) return false;
     if (state.listing.path !== state.requestedPath) return false;
@@ -311,31 +338,27 @@ export default function DirectoryPickerModal({
   };
 
   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Only load on blur if the user actually changed the path.
     const path = e.currentTarget.value;
     if (path !== state.requestedPath) {
-      setState((s) => ({ ...s, inputPath: path }));
+      setState((s) => ({ ...s, inputPath: path, requestedPath: path }));
       void loadDirectory(path);
     }
   };
 
-  const breadcrumbs = useMemo(() => {
-    const base = state.listing?.path ?? state.inputPath ?? "";
-    const normalized = base.replace(/\\/g, "/").replace(/\/+$/, "");
-    const parts = normalized.split("/").filter(Boolean);
-    const out: { label: string; path: string }[] = [];
-    let built = "";
-    for (const part of parts) {
-      built += `/${part}`;
-      out.push({ label: part, path: built });
-    }
-    return out;
-  }, [state.listing, state.inputPath]);
+  function handleHiddenToggle() {
+    const next = !state.showHidden;
+    showHiddenRef.current = next;
 
-  const breadcrumbRoot = useMemo(() => {
-    const current = state.listing?.path ?? state.inputPath;
-    return state.roots.find((r) => current.startsWith(r.path.replace(/\/+$/, "") + "/")) ?? state.roots[0];
-  }, [state.listing, state.inputPath, state.roots]);
+    setState((current) => ({
+      ...current,
+      showHidden: next,
+    }));
+
+    const currentPath = state.listing?.path;
+    if (currentPath) {
+      void loadDirectory(currentPath, { showHidden: next });
+    }
+  }
 
   const titleId = "dp-title";
   const descId = "dp-desc";
@@ -360,18 +383,26 @@ export default function DirectoryPickerModal({
           </DialogDescription>
         </DialogHeader>
 
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {state.listing?.allowed
+            ? `Loaded directory ${state.listing.path}`
+            : state.error?.message ?? "No directory loaded"}
+        </div>
+
         <div className="flex flex-col gap-3 px-4 py-2">
           {state.roots.length > 0 && (
             <div className="flex flex-col gap-1">
               <span className="text-xs font-medium text-muted-foreground">Workspace roots</span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5" role="list" aria-label="Workspace roots">
                 {state.roots.map((root) => (
                   <button
                     key={root.path}
                     type="button"
+                    role="listitem"
                     onClick={() => navigateTo(root.path)}
                     className="flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground hover:bg-accent"
                     title={root.path}
+                    aria-label={`Workspace root ${root.label}`}
                   >
                     <HardDriveIcon className="size-3.5" />
                     <span className="truncate max-w-[8rem]">{root.label}</span>
@@ -387,8 +418,8 @@ export default function DirectoryPickerModal({
             </label>
             <Input
               id="dp-path"
-              ref={inputRef}
               value={state.inputPath}
+              autoFocus
               spellCheck={false}
               autoCapitalize="none"
               autoCorrect="off"
@@ -414,20 +445,7 @@ export default function DirectoryPickerModal({
             >
               <ArrowUpIcon className="size-3.5" />
             </button>
-            {breadcrumbRoot && (
-              <span className="flex flex-none items-center">
-                <ChevronRightIcon className="size-3 opacity-50" />
-                <button
-                  type="button"
-                  onClick={() => navigateTo(breadcrumbRoot.path)}
-                  className="rounded p-0.5 hover:text-foreground"
-                  title={breadcrumbRoot.path}
-                >
-                  {breadcrumbRoot.label}
-                </button>
-              </span>
-            )}
-            {breadcrumbs.map((crumb) => (
+            {state.listing?.breadcrumbs.map((crumb) => (
               <span key={crumb.path} className="flex flex-none items-center">
                 <ChevronRightIcon className="size-3 opacity-50" />
                 <button
@@ -435,6 +453,7 @@ export default function DirectoryPickerModal({
                   onClick={() => navigateTo(crumb.path)}
                   className="max-w-[6rem] truncate rounded p-0.5 hover:text-foreground sm:max-w-[10rem]"
                   title={crumb.path}
+                  aria-label={`Breadcrumb ${crumb.label}`}
                 >
                   {crumb.label}
                 </button>
@@ -444,7 +463,6 @@ export default function DirectoryPickerModal({
         </div>
 
         <div
-          ref={listRef}
           role="listbox"
           aria-label="Folders"
           aria-busy={state.loading}
@@ -460,11 +478,23 @@ export default function DirectoryPickerModal({
           {!state.loading && state.error && (
             <div
               id="dp-error"
-              className="py-6 text-center text-xs text-red-500"
+              className="flex flex-col items-center gap-2 py-6 text-center text-xs"
               role="alert"
               aria-live="assertive"
             >
-              {state.error.message}
+              <span className={state.error.code === "NO_WORKSPACE_ROOTS" ? "text-muted-foreground" : "text-red-500"}>
+                {state.error.message}
+              </span>
+              {state.error.code !== "NO_WORKSPACE_ROOTS" && (
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  className="rounded-md bg-secondary px-2 py-1 text-xs font-medium text-secondary-foreground hover:bg-accent"
+                  aria-label="Retry"
+                >
+                  Retry
+                </button>
+              )}
             </div>
           )}
 
@@ -488,14 +518,13 @@ export default function DirectoryPickerModal({
                 type="button"
                 role="option"
                 aria-selected={false}
+                aria-label={`Open folder ${entry.name}`}
                 className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-secondary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 onClick={() => navigateTo(entry.path)}
-                onDoubleClick={() => navigateTo(entry.path)}
+                title={entry.path}
               >
                 <FolderIcon className="size-4 flex-none text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate" title={entry.path}>
-                  {entry.name}
-                </span>
+                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
               </button>
             ))}
         </div>
@@ -505,7 +534,7 @@ export default function DirectoryPickerModal({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setState((s) => ({ ...s, showHidden: !s.showHidden }))}
+                onClick={handleHiddenToggle}
                 className="flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-secondary"
                 aria-pressed={state.showHidden}
               >
@@ -517,6 +546,7 @@ export default function DirectoryPickerModal({
                 onClick={handleRefresh}
                 disabled={state.loading}
                 className="flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground hover:bg-secondary disabled:opacity-50"
+                aria-label="Refresh directory"
               >
                 <RefreshCwIcon className={cn("size-3.5", state.loading && "animate-spin")} />
                 Refresh
@@ -545,6 +575,7 @@ export default function DirectoryPickerModal({
                   onClick={() => void handleCreate()}
                   disabled={state.creating || !newName.trim()}
                   className="flex h-8 flex-none items-center gap-1 rounded-md bg-secondary px-2 text-xs font-medium text-secondary-foreground hover:bg-accent disabled:opacity-50"
+                  aria-label="Create folder"
                 >
                   {state.creating ? <Loader2Icon className="size-3.5 animate-spin" /> : <PlusIcon className="size-3.5" />}
                   Create
@@ -560,9 +591,7 @@ export default function DirectoryPickerModal({
           )}
 
           {!canCreateFolder && !state.loading && !state.error && state.listing && (
-            <div className="text-xs text-muted-foreground">
-              New folder is not available in this directory.
-            </div>
+            <div className="text-xs text-muted-foreground">New folder is not available in this directory.</div>
           )}
 
           <div className="flex items-center justify-between gap-2 pt-1">
@@ -604,5 +633,5 @@ export default function DirectoryPickerModal({
         </div>
       </DialogContent>
     </Dialog>
-    );
-  }
+  );
+}

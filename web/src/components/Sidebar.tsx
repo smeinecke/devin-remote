@@ -48,20 +48,8 @@ export default function Sidebar() {
   const [renameText, setRenameText] = useState("");
 
   const workspaces = useMemo(() => {
-    const seen = new Set<string>();
-    const out: string[] = [];
-    const push = (w: string | null | undefined) => {
-      if (!w) return;
-      const c = w.trim();
-      if (!c || seen.has(c)) return;
-      seen.add(c);
-      out.push(c);
-    };
-    if (state.meta?.primaryCwd) push(state.meta.primaryCwd);
-    for (const w of state.meta?.workspaces ?? []) push(w);
-    for (const s of Object.values(state.sessions)) push(s.cwd);
-    return out.slice(0, 15);
-  }, [state.meta, state.sessions]);
+    return (state.meta?.workspaces ?? []).slice(0, 15);
+  }, [state.meta]);
 
   const sessions = useMemo(() => {
     const all = Object.values(state.sessions);

@@ -407,13 +407,17 @@ export function toolCallPrimaryLabel(call: ToolCallLike, session?: WorkspaceSess
 export function basename(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, "");
   const i = trimmed.lastIndexOf("/");
-  return i >= 0 ? trimmed.slice(i + 1) : trimmed;
+  const j = trimmed.lastIndexOf("\\");
+  const split = Math.max(i, j);
+  return split >= 0 ? trimmed.slice(split + 1) : trimmed;
 }
 
 export function dirname(p: string): string {
   const trimmed = p.replace(/[/\\]+$/, "");
   const i = trimmed.lastIndexOf("/");
-  return i >= 0 ? trimmed.slice(0, i) || "/" : "/";
+  const j = trimmed.lastIndexOf("\\");
+  const split = Math.max(i, j);
+  return split >= 0 ? trimmed.slice(0, split) || "/" : "/";
 }
 
 function splitPath(p: string): string[] {
@@ -643,6 +647,12 @@ export function validationErrorMessage(code: string): string {
       return "Symlink escapes workspace roots.";
     case "IO_ERROR":
       return "Could not read the directory.";
+    case "ROOTS_REQUEST_FAILED":
+      return "Could not load workspace roots.";
+    case "NO_WORKSPACE_ROOTS":
+      return "No workspace roots are configured.";
+    case "DIRECTORY_LOAD_FAILED":
+      return "Could not load the directory.";
     default:
       return code;
   }

@@ -422,6 +422,8 @@ export interface DirectoryEntry {
 export interface DirectoryListingResponse {
   path: string;
   parent: string | null;
+  root: FilesystemRoot;
+  breadcrumbs: { label: string; path: string }[];
   entries: DirectoryEntry[];
   allowed: boolean;
   writable: boolean;

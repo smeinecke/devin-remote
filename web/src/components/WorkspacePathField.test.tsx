@@ -24,6 +24,8 @@ describe("WorkspacePathField", () => {
     vi.spyOn(api, "listDirectories").mockResolvedValue({
       path: "/",
       parent: null,
+      root: { path: "/", label: "Root" },
+      breadcrumbs: [{ label: "Root", path: "/" }],
       entries: [],
       allowed: true,
       writable: true,
