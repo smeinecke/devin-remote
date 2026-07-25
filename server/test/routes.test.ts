@@ -154,4 +154,37 @@ describe("filesystem route integration", () => {
     assert.ok(recent.includes(root), "root should appear in recent");
     assert.ok(!recent.some((p) => p.includes("outside-recent")), "outside path should not appear");
   });
+
+  it("POST /api/filesystem/create-directory existing escaping symlink returns 403 SYMLINK_ESCAPE", async () => {
+    const outside = path.join(tmp, "outside");
+    await fs.mkdir(outside, { recursive: true });
+    const link = path.join(root, "escape-link");
+    await fs.symlink(outside, link, "dir");
+    try {
+      const { status, body } = await request("POST", "/api/filesystem/create-directory", {
+        parentPath: root,
+        name: "escape-link",
+      });
+      assert.strictEqual(status, 403);
+      assert.strictEqual((body as any).errorCode, "SYMLINK_ESCAPE");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("POST /api/filesystem/validate-directory includeGit=false returns no git metadata", async () => {
+    const { status, body } = await request("POST", "/api/filesystem/validate-directory", {
+      path: root,
+      includeGit: false,
+    });
+    assert.strictEqual(status, 200);
+    assert.strictEqual((body as any).gitRepository, false);
+    assert.strictEqual((body as any).branch, null);
+  });
+
+  it("POST /api/filesystem/validate-directory default still permits git metadata", async () => {
+    const { status, body } = await request("POST", "/api/filesystem/validate-directory", { path: root });
+    assert.strictEqual(status, 200);
+    assert.strictEqual(typeof (body as any).gitRepository, "boolean");
+  });
 });

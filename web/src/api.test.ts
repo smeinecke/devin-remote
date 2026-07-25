@@ -4,6 +4,8 @@ import {
   ApiResponseError,
   directoryListingFromError,
   directoryValidationFromError,
+  filesystemListingErrorCode,
+  filesystemValidationErrorCode,
   InvalidApiPayloadError,
   isDirectoryListingResponse,
   isDirectoryValidationResponse,
@@ -467,5 +469,71 @@ describe("api request helper", () => {
     const listing = await api.listDirectories("/workspace");
     expect(listing.path).toBe("/workspace");
     expect(listing.entries[0]?.name).toBe("src");
+  });
+
+  it("passes includeGit false to validate-directory", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(true, 200, {
+        input: "/workspace",
+        resolvedPath: "/workspace",
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+      }) as unknown as Response,
+    );
+
+    await api.validateDirectory("/workspace", false);
+
+    const body = JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.includeGit).toBe(false);
+  });
+
+  it("extracts error codes from structured filesystem errors", () => {
+    const listingErr = new ApiResponseError("Not found", 404, {
+      path: "/workspace",
+      parent: null,
+      root: { path: "/workspace", label: "workspace" },
+      breadcrumbs: [],
+      entries: [],
+      allowed: false,
+      writable: false,
+      errorCode: "PATH_NOT_FOUND",
+    });
+    expect(filesystemListingErrorCode(listingErr)).toBe("PATH_NOT_FOUND");
+
+    const validationErr = new ApiResponseError("Forbidden", 403, {
+      input: "/workspace",
+      resolvedPath: null,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      allowed: false,
+      gitRepository: false,
+      branch: null,
+      errorCode: "OUTSIDE_ALLOWED_ROOT",
+    });
+    expect(filesystemValidationErrorCode(validationErr)).toBe("OUTSIDE_ALLOWED_ROOT");
+  });
+
+  it("reports malformed non-2xx filesystem payloads as INVALID_API_RESPONSE", () => {
+    expect(filesystemListingErrorCode(new ApiResponseError("Forbidden", 403, { not: "valid" }))).toBe(
+      "INVALID_API_RESPONSE",
+    );
+    expect(filesystemValidationErrorCode(new ApiResponseError("Forbidden", 403, { not: "valid" }))).toBe(
+      "INVALID_API_RESPONSE",
+    );
+    expect(filesystemListingErrorCode(new InvalidApiPayloadError("/api/filesystem/directories", { bad: true }))).toBe(
+      "INVALID_API_RESPONSE",
+    );
+  });
+
+  it("falls back to transport-level codes for non-response errors", () => {
+    expect(filesystemListingErrorCode(new Error("network"))).toBe("DIRECTORY_LOAD_FAILED");
+    expect(filesystemValidationErrorCode(new Error("network"))).toBe("IO_ERROR");
   });
 });

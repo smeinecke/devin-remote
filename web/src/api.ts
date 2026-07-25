@@ -111,6 +111,26 @@ export function directoryValidationFromError(error: unknown): DirectoryValidatio
   return payload;
 }
 
+export function filesystemListingErrorCode(error: unknown): string {
+  if (error instanceof InvalidApiPayloadError) return "INVALID_API_RESPONSE";
+  if (error instanceof ApiResponseError) {
+    const payload = directoryListingFromError(error);
+    if (payload?.errorCode) return payload.errorCode;
+    if (error.payload !== null) return "INVALID_API_RESPONSE";
+  }
+  return "DIRECTORY_LOAD_FAILED";
+}
+
+export function filesystemValidationErrorCode(error: unknown): string {
+  if (error instanceof InvalidApiPayloadError) return "INVALID_API_RESPONSE";
+  if (error instanceof ApiResponseError) {
+    const payload = directoryValidationFromError(error);
+    if (payload?.errorCode) return payload.errorCode;
+    if (error.payload !== null) return "INVALID_API_RESPONSE";
+  }
+  return "IO_ERROR";
+}
+
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   const response = await fetch(url, {
     method,
@@ -242,8 +262,8 @@ export const api = {
     return reqChecked<DirectoryListingResponse>("GET", `/api/filesystem/directories?${q.toString()}`, undefined, isDirectoryListingResponse);
   },
 
-  validateDirectory: (path: string) =>
-    reqChecked<DirectoryValidationResponse>("POST", "/api/filesystem/validate-directory", { path }, isDirectoryValidationResponse),
+  validateDirectory: (path: string, includeGit = true) =>
+    reqChecked<DirectoryValidationResponse>("POST", "/api/filesystem/validate-directory", { path, includeGit }, isDirectoryValidationResponse),
 
   createDirectory: (params: { parentPath: string; name: string }) =>
     reqChecked<DirectoryValidationResponse>("POST", "/api/filesystem/create-directory", params, isDirectoryValidationResponse),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, directoryValidationFromError, InvalidApiPayloadError } from "../api";
+import { api, directoryValidationFromError, filesystemValidationErrorCode } from "../api";
 import type { DirectoryValidationResponse } from "../types";
 import { basename, shortenPath, workspaceMeetsModeRequirements, validationErrorMessage } from "../utils";
 import { cn } from "@/lib/utils";
@@ -134,10 +134,8 @@ export default function WorkspacePathField({
           const result: DirectoryValidationResponse = payload ?? {
             ...DEFAULT_INVALID,
             input: normalizedInput,
+            errorCode: filesystemValidationErrorCode(err),
           };
-          if (err instanceof InvalidApiPayloadError) {
-            result.errorCode = "INVALID_API_RESPONSE";
-          }
           applyValidation(result, normalizedInput);
         } finally {
           if (activeValidationRef.current?.sequence === sequence) {

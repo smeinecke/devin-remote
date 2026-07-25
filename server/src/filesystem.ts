@@ -515,12 +515,19 @@ export async function listDirectories(
   };
 }
 
+export interface CreateDirectoryDeps {
+  mkdir?: (target: string) => Promise<void>;
+  validate?: (input: string, roots: string[], options?: { includeGit?: boolean }) => Promise<DirectoryValidationResponse>;
+}
+
 export async function createDirectory(
   parentPath: string,
   name: string,
   roots: string[],
-  options: { includeGit?: boolean } = {},
+  options: { includeGit?: boolean; deps?: CreateDirectoryDeps } = {},
 ): Promise<DirectoryValidationResponse> {
+  const doMkdir = options.deps?.mkdir ?? fs.mkdir;
+  const doValidate = options.deps?.validate ?? validateDirectory;
   if (
     typeof parentPath !== "string" ||
     hasNullBytes(parentPath) ||
@@ -581,7 +588,7 @@ export async function createDirectory(
   let created = false;
 
   try {
-    const preValidation = await validateDirectory(target, roots, { includeGit: options.includeGit ?? false });
+    const preValidation = await doValidate(target, roots, { includeGit: options.includeGit ?? false });
     if (preValidation.errorCode !== "PATH_NOT_FOUND") {
       if (!preValidation.allowed) {
         return { ...preValidation, input: parentPath };
@@ -589,10 +596,10 @@ export async function createDirectory(
       return { ...preValidation, input: parentPath, errorCode: "PATH_ALREADY_EXISTS" };
     }
 
-    await fs.mkdir(target);
+    await doMkdir(target);
     created = true;
 
-    const result = await validateDirectory(target, roots, { includeGit: options.includeGit ?? false });
+    const result = await doValidate(target, roots, { includeGit: options.includeGit ?? false });
     if (!result.allowed || !result.exists || !result.isDirectory) {
       if (created) {
         await fs.rmdir(target).catch(() => {});
@@ -615,18 +622,14 @@ export async function createDirectory(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "EEXIST") {
-      return {
-        input: parentPath,
-        resolvedPath: target,
-        exists: true,
-        isDirectory: false,
-        readable: false,
-        writable: false,
-        allowed: true,
-        gitRepository: false,
-        branch: null,
-        errorCode: "PATH_ALREADY_EXISTS",
-      };
+      const existing = await doValidate(target, roots, { includeGit: false });
+      if (!existing.allowed) {
+        return { ...existing, input: parentPath };
+      }
+      if (existing.errorCode && existing.errorCode !== "NOT_A_DIRECTORY") {
+        return { ...existing, input: parentPath };
+      }
+      return { ...existing, input: parentPath, errorCode: "PATH_ALREADY_EXISTS" };
     }
     return {
       input: parentPath,

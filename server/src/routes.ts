@@ -445,8 +445,9 @@ export async function handleApi(
     if (m === "POST" && url.pathname === "/api/filesystem/validate-directory") {
       const body = await readJson(req);
       const target = String(body.path ?? "");
+      const includeGit = typeof body.includeGit === "boolean" ? body.includeGit : true;
       const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
-      const result = await validateDirectory(target, roots, { includeGit: true });
+      const result = await validateDirectory(target, roots, { includeGit });
       return json(res, result.allowed && !result.errorCode ? 200 : httpStatusForErrorCode(result.errorCode), result);
     }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, directoryListingFromError, directoryValidationFromError, InvalidApiPayloadError } from "../api";
+import { api, directoryValidationFromError, filesystemListingErrorCode, filesystemValidationErrorCode, InvalidApiPayloadError } from "../api";
 import type { DirectoryListingResponse, FilesystemRoot } from "../types";
 import { shortenPath, validationErrorMessage } from "../utils";
 import { cn } from "@/lib/utils";
@@ -82,18 +82,46 @@ export default function DirectoryPickerModal({
   const wasOpenRef = useRef(false);
   const isCreatingRef = useRef(false);
 
-  const loadDirectory = useCallback(
+  type LoadDirectoryResult =
+    | { ok: true; listing: DirectoryListingResponse }
+    | { ok: false; code: string };
+
+  const performLoadDirectory = useCallback(
     async (
       requestedPath: string,
       options?: { showHidden?: boolean; modalEpoch?: number },
-    ) => {
+    ): Promise<LoadDirectoryResult> => {
       const seq = ++loadSequenceRef.current;
       const capturedEpoch = options?.modalEpoch ?? modalEpochRef.current;
       const showHidden = options?.showHidden ?? showHiddenRef.current;
 
-      if (capturedEpoch !== modalEpochRef.current) return;
+      if (capturedEpoch !== modalEpochRef.current) {
+        return { ok: false, code: "STALE" };
+      }
+
       requestedPathRef.current = requestedPath;
 
+      try {
+        const listing = await api.listDirectories(requestedPath, showHidden);
+        if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) {
+          return { ok: false, code: "STALE" };
+        }
+
+        requestedPathRef.current = listing.path;
+        return { ok: true, listing };
+      } catch (err) {
+        if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) {
+          return { ok: false, code: "STALE" };
+        }
+
+        return { ok: false, code: filesystemListingErrorCode(err) };
+      }
+    },
+    [],
+  );
+
+  const loadDirectory = useCallback(
+    async (requestedPath: string, options?: { showHidden?: boolean; modalEpoch?: number }) => {
       setState((s) => ({
         ...s,
         inputPath: requestedPath,
@@ -103,68 +131,38 @@ export default function DirectoryPickerModal({
         listing: null,
       }));
 
-      try {
-        const listing = await api.listDirectories(requestedPath, showHidden);
-        if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
+      const result = await performLoadDirectory(requestedPath, options);
+      if (!result.ok && result.code === "STALE") return;
 
-        const error: PickerError | null = listing.errorCode
-          ? { code: listing.errorCode, message: validationErrorMessage(listing.errorCode) }
-          : null;
-
-        setState((s) => ({
-          ...s,
-          inputPath: listing.path,
-          requestedPath: listing.path,
-          loadedPath: listing.path,
-          listing,
-          loading: false,
-          error,
-        }));
-      } catch (err) {
-        if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
-
-        if (err instanceof InvalidApiPayloadError) {
-          setState((s) => ({
-            ...s,
-            listing: null,
-            loading: false,
-            error: {
-              code: "INVALID_API_RESPONSE",
-              message: validationErrorMessage("INVALID_API_RESPONSE"),
-            },
-          }));
-          return;
-        }
-
-        const listing = directoryListingFromError(err);
-        if (listing) {
-          const error: PickerError | null = listing.errorCode
-            ? { code: listing.errorCode, message: validationErrorMessage(listing.errorCode) }
-            : null;
-          setState((s) => ({
-            ...s,
-            inputPath: listing.path,
-            requestedPath: listing.path,
-            loadedPath: listing.path,
-            listing,
-            loading: false,
-            error,
-          }));
-          return;
-        }
-
+      if (!result.ok) {
         setState((s) => ({
           ...s,
           listing: null,
           loading: false,
           error: {
-            code: "DIRECTORY_LOAD_FAILED",
-            message: validationErrorMessage("DIRECTORY_LOAD_FAILED"),
+            code: result.code,
+            message: validationErrorMessage(result.code),
           },
         }));
+        return;
       }
+
+      const listing = result.listing;
+      const error: PickerError | null = listing.errorCode
+        ? { code: listing.errorCode, message: validationErrorMessage(listing.errorCode) }
+        : null;
+
+      setState((s) => ({
+        ...s,
+        inputPath: listing.path,
+        requestedPath: listing.path,
+        loadedPath: listing.path,
+        listing,
+        loading: false,
+        error,
+      }));
     },
-    [],
+    [performLoadDirectory],
   );
 
   const initialize = useCallback(
@@ -222,22 +220,52 @@ export default function DirectoryPickerModal({
       setState((s) => ({ ...s, roots, rootsLoading: false }));
 
       if (preferred.trim()) {
-        try {
-          const validation = await api.validateDirectory(preferred);
-          if (epoch !== modalEpochRef.current) return;
-          if (validation.allowed && validation.resolvedPath) {
-            await loadDirectory(validation.resolvedPath, { modalEpoch: epoch });
-            return;
-          }
-        } catch {
-          // fall through to first root
-        }
+        const result = await performLoadDirectory(preferred, { modalEpoch: epoch });
         if (epoch !== modalEpochRef.current) return;
+        if (!result.ok && result.code === "STALE") return;
+
+        const fallbackCode = result.ok
+          ? result.listing.errorCode && isOpenFailureCode(result.listing.errorCode)
+            ? result.listing.errorCode
+            : null
+          : isOpenFailureCode(result.code)
+            ? result.code
+            : null;
+
+        if (!fallbackCode) {
+          if (result.ok) {
+            const listing = result.listing;
+            const error: PickerError | null = listing.errorCode
+              ? { code: listing.errorCode, message: validationErrorMessage(listing.errorCode) }
+              : null;
+            setState((s) => ({
+              ...s,
+              inputPath: listing.path,
+              requestedPath: listing.path,
+              loadedPath: listing.path,
+              listing,
+              loading: false,
+              error,
+            }));
+          } else {
+            setState((s) => ({
+              ...s,
+              listing: null,
+              loading: false,
+              error: {
+                code: result.code,
+                message: validationErrorMessage(result.code),
+              },
+            }));
+          }
+          return;
+        }
       }
 
+      if (epoch !== modalEpochRef.current) return;
       await loadDirectory(roots[0].path, { modalEpoch: epoch });
     },
-    [loadDirectory],
+    [performLoadDirectory, loadDirectory],
   );
 
   useEffect(() => {
@@ -260,6 +288,21 @@ export default function DirectoryPickerModal({
     wasOpenRef.current = open;
   }, [open, initialPath, initialize]);
 
+  function activeNavigationPath(): string | null {
+    return requestedPathRef.current || state.loadedPath || state.inputPath || null;
+  }
+
+  function isOpenFailureCode(code: string): boolean {
+    return (
+      code === "PATH_NOT_FOUND" ||
+      code === "OUTSIDE_ALLOWED_ROOT" ||
+      code === "NOT_A_DIRECTORY" ||
+      code === "SYMLINK_ESCAPE" ||
+      code === "PERMISSION_DENIED" ||
+      code === "INVALID_PATH"
+    );
+  }
+
   const navigateTo = useCallback(
     (target: string) => {
       void loadDirectory(target);
@@ -273,20 +316,20 @@ export default function DirectoryPickerModal({
   }, [state.listing, loadDirectory]);
 
   const handleRefresh = useCallback(() => {
-    const current = requestedPathRef.current || state.loadedPath || state.inputPath;
+    const current = activeNavigationPath();
     if (current) void loadDirectory(current);
-  }, [state.loadedPath, state.inputPath, loadDirectory]);
+  }, [loadDirectory]);
 
   const handleRetry = useCallback(() => {
     const code = state.error?.code;
     if (code === "ROOTS_REQUEST_FAILED" || code === "NO_WORKSPACE_ROOTS") {
       const epoch = ++modalEpochRef.current;
-      void initialize(epoch, state.inputPath ?? initialPath);
+      void initialize(epoch, activeNavigationPath() ?? initialPath);
     } else {
-      const current = requestedPathRef.current || state.loadedPath || state.inputPath;
+      const current = activeNavigationPath();
       if (current) void loadDirectory(current);
     }
-  }, [state.error, state.inputPath, state.loadedPath, initialPath, initialize, loadDirectory]);
+  }, [state.error, initialPath, initialize, loadDirectory]);
 
   const handleCreate = useCallback(async () => {
     const name = newName.trim();
@@ -327,10 +370,7 @@ export default function DirectoryPickerModal({
       }
     } catch (err) {
       if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
-      const payload = directoryValidationFromError(err);
-      const code = err instanceof InvalidApiPayloadError
-        ? "INVALID_API_RESPONSE"
-        : (payload?.errorCode ?? "IO_ERROR");
+      const code = filesystemValidationErrorCode(err);
       setNewNameError(validationErrorMessage(code));
       isCreatingRef.current = false;
       setState((s) => ({ ...s, creating: false }));
@@ -391,7 +431,7 @@ export default function DirectoryPickerModal({
       showHidden: next,
     }));
 
-    const target = requestedPathRef.current || state.listing?.path || state.inputPath;
+    const target = activeNavigationPath();
     if (target) {
       void loadDirectory(target, { showHidden: next, modalEpoch: modalEpochRef.current });
     }

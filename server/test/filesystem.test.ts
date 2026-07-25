@@ -146,12 +146,13 @@ describe("filesystem API", () => {
   it("rejects creating a directory through a symlink parent that escapes", async () => {
     const link = path.join(dirs.root, "escape-link");
     await fs.symlink(dirs.outside, link, "dir");
-    const result = await createDirectory(link, "new", roots);
-    assert.strictEqual(result.allowed, false);
-    assert.ok(
-      result.errorCode === "SYMLINK_ESCAPE" || result.errorCode === "OUTSIDE_ALLOWED_ROOT",
-      `unexpected error code: ${result.errorCode}`,
-    );
+    try {
+      const result = await createDirectory(link, "new", roots);
+      assert.strictEqual(result.allowed, false);
+      assert.strictEqual(result.errorCode, "SYMLINK_ESCAPE");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
   });
 
   it("rejects invalid folder names", async () => {
@@ -497,10 +498,7 @@ describe("filesystem API", () => {
     try {
       const result = await createDirectory(dirs.root, "escape-to-outside", roots);
       assert.strictEqual(result.allowed, false);
-      assert.ok(
-        result.errorCode === "SYMLINK_ESCAPE" || result.errorCode === "OUTSIDE_ALLOWED_ROOT",
-        `unexpected error code: ${result.errorCode}`,
-      );
+      assert.strictEqual(result.errorCode, "SYMLINK_ESCAPE");
     } finally {
       await fs.rm(link, { force: true });
     }
@@ -549,6 +547,104 @@ describe("filesystem API", () => {
     const roots = getAllowedRoots(dirs.root, store, {});
     const listing = await listDirectories(outside, roots);
     assert.strictEqual(listing.allowed, false);
-    assert.ok(listing.errorCode === "OUTSIDE_ALLOWED_ROOT" || listing.errorCode === "SYMLINK_ESCAPE");
+    assert.strictEqual(listing.errorCode, "OUTSIDE_ALLOWED_ROOT");
+  });
+
+  it("revalidates a race-created contained directory as PATH_ALREADY_EXISTS", async () => {
+    const name = "race-dir";
+    const target = path.join(dirs.root, name);
+    const result = await createDirectory(dirs.root, name, roots, {
+      deps: {
+        mkdir: async (p: string) => {
+          await fs.mkdir(p);
+          const err = new Error("EEXIST") as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        },
+      },
+    });
+    assert.strictEqual(result.allowed, true);
+    assert.strictEqual(result.errorCode, "PATH_ALREADY_EXISTS");
+    const stat = await fs.stat(target);
+    assert.ok(stat.isDirectory());
+  });
+
+  it("revalidates a race-created contained file as PATH_ALREADY_EXISTS", async () => {
+    const name = "race-file";
+    const target = path.join(dirs.root, name);
+    const result = await createDirectory(dirs.root, name, roots, {
+      deps: {
+        mkdir: async (p: string) => {
+          await fs.writeFile(p, "x");
+          const err = new Error("EEXIST") as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        },
+      },
+    });
+    assert.strictEqual(result.allowed, true);
+    assert.strictEqual(result.errorCode, "PATH_ALREADY_EXISTS");
+    const stat = await fs.stat(target);
+    assert.ok(stat.isFile());
+  });
+
+  it("revalidates a race-created contained symlink as PATH_ALREADY_EXISTS", async () => {
+    const name = "race-link";
+    const existing = path.join(dirs.root, "existing-dir");
+    await fs.mkdir(existing);
+    const target = path.join(dirs.root, name);
+    const result = await createDirectory(dirs.root, name, roots, {
+      deps: {
+        mkdir: async (p: string) => {
+          await fs.symlink(existing, p, "dir");
+          const err = new Error("EEXIST") as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        },
+      },
+    });
+    assert.strictEqual(result.allowed, true);
+    assert.strictEqual(result.errorCode, "PATH_ALREADY_EXISTS");
+    const resolved = await fs.realpath(target);
+    assert.strictEqual(resolved, existing);
+  });
+
+  it("revalidates a race-created escaping symlink as SYMLINK_ESCAPE", async () => {
+    const name = "race-escape";
+    const target = path.join(dirs.root, name);
+    const result = await createDirectory(dirs.root, name, roots, {
+      deps: {
+        mkdir: async (p: string) => {
+          await fs.symlink(dirs.outside, p, "dir");
+          const err = new Error("EEXIST") as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        },
+      },
+    });
+    assert.strictEqual(result.allowed, false);
+    assert.strictEqual(result.errorCode, "SYMLINK_ESCAPE");
+  });
+
+  it("returns PERMISSION_DENIED when EEXIST revalidation cannot inspect the target", async () => {
+    const name = "race-no-access";
+    const target = path.join(dirs.root, name);
+    const result = await createDirectory(dirs.root, name, roots, {
+      deps: {
+        mkdir: async (p: string) => {
+          await fs.mkdir(p);
+          await fs.chmod(p, 0o000);
+          const err = new Error("EEXIST") as NodeJS.ErrnoException;
+          err.code = "EEXIST";
+          throw err;
+        },
+      },
+    });
+    try {
+      assert.strictEqual(result.allowed, false);
+      assert.strictEqual(result.errorCode, "PERMISSION_DENIED");
+    } finally {
+      await fs.chmod(target, 0o755).catch(() => {});
+    }
   });
 });

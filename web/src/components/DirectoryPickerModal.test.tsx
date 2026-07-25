@@ -3,7 +3,7 @@ import { render, screen, waitFor, cleanup, fireEvent, within } from "@testing-li
 import { useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import DirectoryPickerModal from "./DirectoryPickerModal";
-import { api, ApiResponseError } from "../api";
+import { api, ApiResponseError, InvalidApiPayloadError } from "../api";
 import type { DirectoryListingResponse, FilesystemRoot } from "../types";
 
 const HOME = process.env.HOME ?? "/tmp";
@@ -136,29 +136,32 @@ describe("DirectoryPickerModal", () => {
     cleanup();
   });
 
-  it("opens a valid path with one root, one validation, and one listing request", async () => {
+  it("opens a valid path with one root and one listing request, without validation", async () => {
     render(<TestWrapper initialPath={`${HOME}/projects`} />);
 
     await waitFor(() => {
       expect(rootsSpy).toHaveBeenCalledTimes(1);
-      expect(validateSpy).toHaveBeenCalledTimes(1);
       expect(listSpy).toHaveBeenCalledTimes(1);
       expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/projects`, false);
+      expect(validateSpy).not.toHaveBeenCalled();
     });
   });
 
   it("falls back to the first root when the initial path is invalid", async () => {
-    validateSpy.mockResolvedValue({
-      input: "/invalid",
-      resolvedPath: null,
-      exists: false,
-      isDirectory: false,
-      readable: false,
-      writable: false,
-      allowed: false,
-      gitRepository: false,
-      branch: null,
-      errorCode: "OUTSIDE_ALLOWED_ROOT",
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === "/invalid") {
+        return {
+          path: "/invalid",
+          parent: null,
+          root: { path: "", label: "" },
+          breadcrumbs: [],
+          entries: [],
+          allowed: false,
+          writable: false,
+          errorCode: "OUTSIDE_ALLOWED_ROOT",
+        };
+      }
+      return makeListing(path, defaultRoots.map((r) => r.path), !!hidden);
     });
 
     render(<TestWrapper initialPath="/invalid" />);
@@ -166,6 +169,7 @@ describe("DirectoryPickerModal", () => {
     await waitFor(() => {
       expect(listSpy).toHaveBeenLastCalledWith(`${HOME}`, false);
     });
+    expect(validateSpy).not.toHaveBeenCalled();
   });
 
   it("ignores out-of-order directory responses", async () => {
@@ -245,7 +249,7 @@ describe("DirectoryPickerModal", () => {
     await waitFor(() => {
       expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/packages/web`, true);
       expect(rootsSpy).toHaveBeenCalledTimes(1);
-      expect(validateSpy).toHaveBeenCalledTimes(1);
+      expect(validateSpy).not.toHaveBeenCalled();
     });
 
     const input = screen.getByLabelText("Path") as HTMLInputElement;
@@ -927,5 +931,252 @@ describe("DirectoryPickerModal", () => {
     await waitFor(() => {
       expect(screen.getByText("Outside allowed workspace roots.")).not.toBeNull();
     });
+  });
+
+  it("uses the canonical path when an alias resolves differently", async () => {
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === `${HOME}/alias`) {
+        return {
+          path: `${HOME}/canonical`,
+          parent: `${HOME}`,
+          root: { path: `${HOME}`, label: "Home" },
+          breadcrumbs: [{ label: "canonical", path: `${HOME}/canonical` }],
+          entries: [{ name: "src", path: `${HOME}/canonical/src`, hidden: false, readable: true, writable: true }],
+          allowed: true,
+          writable: true,
+        };
+      }
+      return makeListing(path, [`${HOME}`], !!hidden);
+    });
+
+    render(<TestWrapper initialPath={`${HOME}/alias`} />);
+    await waitFor(() => {
+      const input = screen.getByLabelText("Path") as HTMLInputElement;
+      expect(input.value).toBe(`${HOME}/canonical`);
+      expect(screen.getByText("src")).not.toBeNull();
+    });
+    expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/alias`, false);
+    expect(validateSpy).not.toHaveBeenCalled();
+  });
+
+  it("refresh uses the canonical loaded path", async () => {
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === `${HOME}/alias`) {
+        return {
+          path: `${HOME}/canonical`,
+          parent: `${HOME}`,
+          root: { path: `${HOME}`, label: "Home" },
+          breadcrumbs: [{ label: "canonical", path: `${HOME}/canonical` }],
+          entries: [{ name: "src", path: `${HOME}/canonical/src`, hidden: false, readable: true, writable: true }],
+          allowed: true,
+          writable: true,
+        };
+      }
+      return makeListing(path, [`${HOME}`], !!hidden);
+    });
+
+    render(<TestWrapper initialPath={`${HOME}/alias`} />);
+    await waitFor(() => expect(screen.getByText("src")).not.toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: /Refresh directory/i }));
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/canonical`, false);
+    });
+  });
+
+  it("show hidden uses the canonical loaded path", async () => {
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === `${HOME}/alias`) {
+        return {
+          path: `${HOME}/canonical`,
+          parent: `${HOME}`,
+          root: { path: `${HOME}`, label: "Home" },
+          breadcrumbs: [{ label: "canonical", path: `${HOME}/canonical` }],
+          entries: [{ name: "src", path: `${HOME}/canonical/src`, hidden: false, readable: true, writable: true }],
+          allowed: true,
+          writable: true,
+        };
+      }
+      return makeListing(path, [`${HOME}`], !!hidden);
+    });
+
+    render(<TestWrapper initialPath={`${HOME}/alias`} />);
+    await waitFor(() => expect(screen.getByText("src")).not.toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: /Hidden/i }));
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/canonical`, true);
+    });
+  });
+
+  it("retry uses the canonical path from a structured error", async () => {
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === `${HOME}/alias`) {
+        return {
+          path: `${HOME}/canonical`,
+          parent: null,
+          root: { path: `${HOME}`, label: "Home" },
+          breadcrumbs: [],
+          entries: [],
+          allowed: false,
+          writable: false,
+          errorCode: "PATH_NOT_FOUND",
+        };
+      }
+      if (path === `${HOME}/canonical`) {
+        return {
+          path: `${HOME}/canonical`,
+          parent: `${HOME}`,
+          root: { path: `${HOME}`, label: "Home" },
+          breadcrumbs: [{ label: "canonical", path: `${HOME}/canonical` }],
+          entries: [{ name: "src", path: `${HOME}/canonical/src`, hidden: false, readable: true, writable: true }],
+          allowed: true,
+          writable: true,
+        };
+      }
+      return makeListing(path, [`${HOME}`], !!hidden);
+    });
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.getByText("projects")).not.toBeNull());
+
+    const input = screen.getByLabelText("Path") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: `${HOME}/alias` } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() =>
+      expect(screen.getByText("Directory does not exist.", { selector: ".text-red-500" })).not.toBeNull(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/canonical`, false);
+      expect(screen.getByText("src")).not.toBeNull();
+    });
+  });
+
+  it("retry keeps the attempted path after a generic transport failure", async () => {
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === `${HOME}/alias`) {
+        throw new Error("network failure");
+      }
+      return makeListing(path, [`${HOME}`], !!hidden);
+    });
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.getByText("projects")).not.toBeNull());
+
+    const input = screen.getByLabelText("Path") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: `${HOME}/alias` } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() =>
+      expect(screen.getByText("Could not load the directory.", { selector: ".text-red-500" })).not.toBeNull(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Retry/i }));
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/alias`, false);
+    });
+  });
+
+  it("does not reuse the original alias after a successful canonical load", async () => {
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === `${HOME}/alias`) {
+        return {
+          path: `${HOME}/canonical`,
+          parent: `${HOME}`,
+          root: { path: `${HOME}`, label: "Home" },
+          breadcrumbs: [{ label: "canonical", path: `${HOME}/canonical` }],
+          entries: [{ name: "src", path: `${HOME}/canonical/src`, hidden: false, readable: true, writable: true }],
+          allowed: true,
+          writable: true,
+        };
+      }
+      return makeListing(path, [`${HOME}`], !!hidden);
+    });
+
+    render(<TestWrapper initialPath={`${HOME}/alias`} />);
+    await waitFor(() => expect(screen.getByText("src")).not.toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: /Refresh directory/i }));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+
+    const calls = listSpy.mock.calls.map((c: any[]) => c[0]);
+    expect(calls).toEqual([`${HOME}/alias`, `${HOME}/canonical`]);
+  });
+
+  it("ignores a stale listing response that arrives after navigation", async () => {
+    const resolvers = new Map<string, (value: DirectoryListingResponse) => void>();
+    listSpy.mockImplementation(
+      (path: string) =>
+        new Promise((resolve) => {
+          resolvers.set(path, resolve);
+        }),
+    );
+
+    render(<TestWrapper initialPath={`${HOME}/alias`} />);
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith(`${HOME}/alias`, false));
+
+    resolvers.get(`${HOME}/alias`)!({
+      path: `${HOME}/canonical`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "canonical", path: `${HOME}/canonical` }],
+      entries: [{ name: "src", path: `${HOME}/canonical/src`, hidden: false, readable: true, writable: true }],
+      allowed: true,
+      writable: true,
+    });
+
+    await waitFor(() => {
+      const input = screen.getByLabelText("Path") as HTMLInputElement;
+      expect(input.value).toBe(`${HOME}/canonical`);
+    });
+
+    const input = screen.getByLabelText("Path") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: `${HOME}/second` } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith(`${HOME}/second`, false));
+
+    resolvers.get(`${HOME}/alias`)!({
+      path: `${HOME}/alias`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "alias", path: `${HOME}/alias` }],
+      entries: [{ name: "stale", path: `${HOME}/alias/stale`, hidden: false, readable: true, writable: true }],
+      allowed: true,
+      writable: true,
+    });
+
+    await waitFor(() => vi.advanceTimersByTimeAsync(10));
+    expect(screen.queryByText("stale")).toBeNull();
+    expect((screen.getByLabelText("Path") as HTMLInputElement).value).toBe(`${HOME}/second`);
+  });
+
+  it("initialization performs no Git-enriched validation request", async () => {
+    render(<TestWrapper initialPath={`${HOME}/projects`} />);
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledTimes(1);
+      expect(validateSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  it("displays INVALID_API_RESPONSE for a malformed non-2xx listing payload", async () => {
+    listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
+      if (path === `${HOME}/projects`) {
+        throw new ApiResponseError("Forbidden", 403, { not: "a listing" });
+      }
+      return makeListing(path, [`${HOME}`], !!hidden);
+    });
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.getByText("projects")).not.toBeNull());
+
+    const input = screen.getByLabelText("Path") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: `${HOME}/projects` } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() =>
+      expect(
+        screen.getByText("The server returned an invalid directory response.", { selector: ".text-red-500" }),
+      ).not.toBeNull(),
+    );
   });
 });
