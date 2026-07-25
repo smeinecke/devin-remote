@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { ContentBlock } from "@agentclientprotocol/sdk";
+
+const execFileP = promisify(execFile);
 import type { SessionRegistry } from "./session-registry.js";
 import type { Store } from "./store.js";
 import type { WsSubscriber } from "./ws-subscriber.js";
@@ -8,7 +12,7 @@ import type { UsageRecord } from "./types.js";
 import type { SessionMetadata as ControllerSessionMetadata } from "./session-controller.js";
 import { saveUpload, serveUpload, uploadPath } from "./uploads.js";
 import { buildSessionZip } from "./export.js";
-import { isGitRepository, createWorktree, cleanupWorktree, rollbackCreatedWorktree } from "./worktree.js";
+import { findGitRoot, createWorktree, cleanupWorktree, rollbackCreatedWorktree } from "./worktree.js";
 import {
   getAllowedRoots,
   listRoots,
@@ -32,6 +36,25 @@ export interface ApiContext {
 function json(res: ServerResponse, status: number, body: unknown) {
   const data = JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json" }).end(data);
+}
+
+function httpStatusForErrorCode(code: string | undefined): number {
+  switch (code) {
+    case "INVALID_PATH":
+    case "NOT_A_DIRECTORY":
+      return 400;
+    case "OUTSIDE_ALLOWED_ROOT":
+    case "SYMLINK_ESCAPE":
+    case "PERMISSION_DENIED":
+      return 403;
+    case "PATH_NOT_FOUND":
+      return 404;
+    case "PATH_ALREADY_EXISTS":
+      return 409;
+    case "IO_ERROR":
+    default:
+      return 500;
+  }
 }
 
 async function readBody(req: IncomingMessage, limit = 10 * 1024 * 1024): Promise<Buffer> {
@@ -149,7 +172,7 @@ export async function handleApi(
       const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
       const validation = await validateDirectory(rawCwd, roots);
       if (!validation.allowed || !validation.exists || !validation.isDirectory || !validation.readable) {
-        return json(res, 400, {
+        return json(res, httpStatusForErrorCode(validation.errorCode), {
           error: validation.errorCode
             ? `${validation.errorCode}: ${rawCwd}`
             : `invalid workspace directory: ${rawCwd}`,
@@ -167,12 +190,14 @@ export async function handleApi(
       }
 
       const canonicalCwd = validation.resolvedPath!;
-      const gitRoot = await isGitRepository(canonicalCwd);
+      const gitRoot = await findGitRoot(canonicalCwd);
       let worktreeInfo: { root: string; worktree: string; branch: string; isIsolated: boolean } = { root: canonicalCwd, worktree: canonicalCwd, branch: "", isIsolated: false };
       let cwd = canonicalCwd;
       if (gitRoot && isolate) {
         const tempId = `new-${Date.now().toString(36)}`;
-        worktreeInfo = await createWorktree(tempId, canonicalCwd);
+        const { stdout: headOut } = await execFileP("git", ["-C", canonicalCwd, "rev-parse", "HEAD"], { timeout: 10_000 });
+        const baseCommit = headOut.trim();
+        worktreeInfo = await createWorktree(tempId, canonicalCwd, gitRoot, baseCommit);
         cwd = worktreeInfo.worktree;
       }
 
@@ -414,23 +439,24 @@ export async function handleApi(
       const showHidden = url.searchParams.get("hidden") === "true";
       const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
       const listing = await listDirectories(target, roots, showHidden);
-      return json(res, listing.allowed ? 200 : listing.errorCode === "OUTSIDE_ALLOWED_ROOT" ? 403 : 404, listing);
+      return json(res, listing.allowed && !listing.errorCode ? 200 : httpStatusForErrorCode(listing.errorCode), listing);
     }
 
     if (m === "POST" && url.pathname === "/api/filesystem/validate-directory") {
       const body = await readJson(req);
       const target = String(body.path ?? "");
       const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
-      const result = await validateDirectory(target, roots);
-      return json(res, result.allowed || result.errorCode === "PATH_NOT_FOUND" ? 200 : 400, result);
+      const result = await validateDirectory(target, roots, { includeGit: true });
+      return json(res, result.allowed && !result.errorCode ? 200 : httpStatusForErrorCode(result.errorCode), result);
     }
 
     if (m === "POST" && url.pathname === "/api/filesystem/create-directory") {
       const body = await readJson(req);
-      const target = String(body.path ?? "");
+      const parentPath = String(body.parentPath ?? "");
+      const name = String(body.name ?? "");
       const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
-      const result = await createDirectory(target, roots);
-      return json(res, result.exists && result.isDirectory && result.allowed ? 200 : 400, result);
+      const result = await createDirectory(parentPath, name, roots);
+      return json(res, result.exists && result.isDirectory && result.allowed ? 200 : httpStatusForErrorCode(result.errorCode), result);
     }
 
     json(res, 404, { error: `not found: ${m} ${url.pathname}` });

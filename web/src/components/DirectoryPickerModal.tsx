@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, directoryListingFromError, directoryValidationFromError } from "../api";
 import type { DirectoryListingResponse, FilesystemRoot } from "../types";
 import { shortenPath, validationErrorMessage } from "../utils";
 import { cn } from "@/lib/utils";
@@ -41,8 +41,8 @@ interface PickerError {
 interface PickerState {
   inputPath: string;
   requestedPath: string;
+  loadedPath: string | null;
   listing: DirectoryListingResponse | null;
-  listingForPath: string | null;
   roots: FilesystemRoot[];
   rootsLoading: boolean;
   loading: boolean;
@@ -62,8 +62,8 @@ export default function DirectoryPickerModal({
   const [state, setState] = useState<PickerState>({
     inputPath: initialPath,
     requestedPath: initialPath,
+    loadedPath: null,
     listing: null,
-    listingForPath: null,
     roots: [],
     rootsLoading: false,
     loading: false,
@@ -78,6 +78,7 @@ export default function DirectoryPickerModal({
   const loadSequenceRef = useRef(0);
   const createSequenceRef = useRef(0);
   const showHiddenRef = useRef(false);
+  const requestedPathRef = useRef(initialPath);
   const wasOpenRef = useRef(false);
   const isCreatingRef = useRef(false);
 
@@ -91,6 +92,7 @@ export default function DirectoryPickerModal({
       const showHidden = options?.showHidden ?? showHiddenRef.current;
 
       if (capturedEpoch !== modalEpochRef.current) return;
+      requestedPathRef.current = requestedPath;
 
       setState((s) => ({
         ...s,
@@ -99,7 +101,6 @@ export default function DirectoryPickerModal({
         loading: true,
         error: null,
         listing: null,
-        listingForPath: null,
       }));
 
       try {
@@ -114,17 +115,34 @@ export default function DirectoryPickerModal({
           ...s,
           inputPath: listing.path,
           requestedPath: listing.path,
+          loadedPath: listing.path,
           listing,
-          listingForPath: listing.path,
           loading: false,
           error,
         }));
       } catch (err) {
         if (seq !== loadSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
+
+        const listing = directoryListingFromError(err);
+        if (listing) {
+          const error: PickerError | null = listing.errorCode
+            ? { code: listing.errorCode, message: validationErrorMessage(listing.errorCode) }
+            : null;
+          setState((s) => ({
+            ...s,
+            inputPath: listing.path,
+            requestedPath: listing.path,
+            loadedPath: listing.path,
+            listing,
+            loading: false,
+            error,
+          }));
+          return;
+        }
+
         setState((s) => ({
           ...s,
           listing: null,
-          listingForPath: null,
           loading: false,
           error: {
             code: "DIRECTORY_LOAD_FAILED",
@@ -146,11 +164,11 @@ export default function DirectoryPickerModal({
         ...s,
         inputPath: preferred,
         requestedPath: preferred,
+        loadedPath: null,
         rootsLoading: true,
         loading: true,
         error: null,
         listing: null,
-        listingForPath: null,
       }));
 
       let roots: FilesystemRoot[] = [];
@@ -214,6 +232,7 @@ export default function DirectoryPickerModal({
         const epoch = ++modalEpochRef.current;
         setNewName("");
         setNewNameError(null);
+        requestedPathRef.current = initialPath;
         void initialize(epoch, initialPath);
       }
     } else {
@@ -240,9 +259,9 @@ export default function DirectoryPickerModal({
   }, [state.listing, loadDirectory]);
 
   const handleRefresh = useCallback(() => {
-    const current = state.listingForPath ?? state.inputPath;
+    const current = requestedPathRef.current || state.loadedPath || state.inputPath;
     if (current) void loadDirectory(current);
-  }, [state.listingForPath, state.inputPath, loadDirectory]);
+  }, [state.loadedPath, state.inputPath, loadDirectory]);
 
   const handleRetry = useCallback(() => {
     const code = state.error?.code;
@@ -250,10 +269,10 @@ export default function DirectoryPickerModal({
       const epoch = ++modalEpochRef.current;
       void initialize(epoch, state.inputPath ?? initialPath);
     } else {
-      const current = state.listingForPath ?? state.inputPath;
+      const current = requestedPathRef.current || state.loadedPath || state.inputPath;
       if (current) void loadDirectory(current);
     }
-  }, [state.error, state.inputPath, state.listingForPath, initialPath, initialize, loadDirectory]);
+  }, [state.error, state.inputPath, state.loadedPath, initialPath, initialize, loadDirectory]);
 
   const handleCreate = useCallback(async () => {
     const name = newName.trim();
@@ -277,27 +296,28 @@ export default function DirectoryPickerModal({
     setState((s) => ({ ...s, creating: true }));
     setNewNameError(null);
 
-    const target = `${parentPath.replace(/[/\\]+$/, "")}/${name}`;
-
     try {
-      const result = await api.createDirectory(target);
+      const result = await api.createDirectory({ parentPath, name });
       if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
 
       if (result.allowed && result.exists && result.isDirectory) {
         setNewName("");
         await loadDirectory(parentPath, { modalEpoch: capturedEpoch });
+        if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
+        isCreatingRef.current = false;
+        setState((s) => ({ ...s, creating: false }));
       } else {
+        isCreatingRef.current = false;
+        setState((s) => ({ ...s, creating: false }));
         setNewNameError(validationErrorMessage(result.errorCode ?? "IO_ERROR"));
       }
     } catch (err) {
-      if (createSeq === createSequenceRef.current && capturedEpoch === modalEpochRef.current) {
-        setNewNameError("Failed to create directory");
-      }
-    } finally {
-      if (createSeq === createSequenceRef.current && capturedEpoch === modalEpochRef.current) {
-        isCreatingRef.current = false;
-        setState((s) => ({ ...s, creating: false }));
-      }
+      if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
+      const payload = directoryValidationFromError(err);
+      const code = payload?.errorCode ?? "IO_ERROR";
+      setNewNameError(validationErrorMessage(code));
+      isCreatingRef.current = false;
+      setState((s) => ({ ...s, creating: false }));
     }
   }, [newName, state.listing, loadDirectory]);
 
@@ -308,7 +328,7 @@ export default function DirectoryPickerModal({
     if (state.listing.errorCode) return false;
     if (state.inputPath !== state.requestedPath) return false;
     if (state.listing.path !== state.requestedPath) return false;
-    if (state.listingForPath !== state.requestedPath) return false;
+    if (state.loadedPath !== state.requestedPath) return false;
     const needsWritable = worktreeIsolation || mode !== "ask";
     if (needsWritable && !state.listing.writable) return false;
     return true;
@@ -319,6 +339,7 @@ export default function DirectoryPickerModal({
     if (state.error || !state.listing) return false;
     if (state.listing.errorCode) return false;
     if (state.listing.path !== state.requestedPath) return false;
+    if (state.loadedPath !== state.requestedPath) return false;
     return state.listing.writable === true;
   }, [state]);
 
@@ -346,7 +367,7 @@ export default function DirectoryPickerModal({
   };
 
   function handleHiddenToggle() {
-    const next = !state.showHidden;
+    const next = !showHiddenRef.current;
     showHiddenRef.current = next;
 
     setState((current) => ({
@@ -354,9 +375,9 @@ export default function DirectoryPickerModal({
       showHidden: next,
     }));
 
-    const currentPath = state.listing?.path;
-    if (currentPath) {
-      void loadDirectory(currentPath, { showHidden: next });
+    const target = requestedPathRef.current || state.listing?.path || state.inputPath;
+    if (target) {
+      void loadDirectory(target, { showHidden: next, modalEpoch: modalEpochRef.current });
     }
   }
 

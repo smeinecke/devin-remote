@@ -59,6 +59,7 @@ export type DirectoryErrorCode =
   | "INVALID_PATH"
   | "PATH_NOT_FOUND"
   | "NOT_A_DIRECTORY"
+  | "PATH_ALREADY_EXISTS"
   | "OUTSIDE_ALLOWED_ROOT"
   | "PERMISSION_DENIED"
   | "SYMLINK_ESCAPE"
@@ -247,6 +248,18 @@ async function gitInfo(dir: string): Promise<{ repository: boolean; branch: stri
   }
 }
 
+const GIT_CACHE_TTL_MS = 5_000;
+const gitCache = new Map<string, { value: { repository: boolean; branch: string | null }; expiresAt: number }>();
+
+async function cachedGitInfo(dir: string): Promise<{ repository: boolean; branch: string | null }> {
+  const now = Date.now();
+  const cached = gitCache.get(dir);
+  if (cached && cached.expiresAt > now) return cached.value;
+  const value = await gitInfo(dir);
+  gitCache.set(dir, { value, expiresAt: now + GIT_CACHE_TTL_MS });
+  return value;
+}
+
 export function rootLabel(p: string): string {
   if (p === HOME || p.startsWith(HOME + path.sep)) {
     return "~" + p.slice(HOME.length);
@@ -257,7 +270,7 @@ export function rootLabel(p: string): string {
 async function resolveAndCheck(
   input: string,
   roots: string[],
-  options: { mustExist?: boolean; mustBeDirectory?: boolean } = {},
+  options: { mustExist?: boolean; mustBeDirectory?: boolean; includeGit?: boolean } = {},
 ): Promise<DirectoryValidationResponse> {
   if (typeof input !== "string" || hasNullBytes(input)) {
     return {
@@ -370,7 +383,10 @@ async function resolveAndCheck(
 
   const readable = isDirectory ? await accessRead(canonical) : false;
   const writable = isDirectory ? await accessWrite(canonical) : false;
-  const { repository: gitRepository, branch } = exists && isDirectory ? await gitInfo(canonical) : { repository: false, branch: null };
+  const { repository: gitRepository, branch } =
+    options.includeGit && exists && isDirectory
+      ? await cachedGitInfo(canonical)
+      : { repository: false, branch: null };
 
   return {
     input,
@@ -388,8 +404,9 @@ async function resolveAndCheck(
 export async function validateDirectory(
   input: string,
   roots: string[],
+  options: { includeGit?: boolean } = {},
 ): Promise<DirectoryValidationResponse> {
-  return resolveAndCheck(input, roots);
+  return resolveAndCheck(input, roots, { ...options, mustExist: false, mustBeDirectory: false });
 }
 
 export async function listDirectories(
@@ -466,10 +483,11 @@ export async function listDirectories(
 
   const parent = path.dirname(dir);
   let parentEntry: string | null = null;
-  if (parent !== dir) {
+  if (dir !== bestRoot && parent !== dir) {
     const parentCanonical = await canonicalPath(parent);
-    const { allowed: parentAllowed } = await isPathWithinAnyRoot(parentCanonical, roots);
-    if (parentAllowed) parentEntry = parentCanonical;
+    if (isWithinRoot(bestRoot, parentCanonical)) {
+      parentEntry = parentCanonical;
+    }
   }
 
   return {
@@ -484,12 +502,19 @@ export async function listDirectories(
 }
 
 export async function createDirectory(
-  input: string,
+  parentPath: string,
+  name: string,
   roots: string[],
+  options: { includeGit?: boolean } = {},
 ): Promise<DirectoryValidationResponse> {
-  if (typeof input !== "string" || hasNullBytes(input)) {
+  if (
+    typeof parentPath !== "string" ||
+    hasNullBytes(parentPath) ||
+    typeof name !== "string" ||
+    !isValidBasename(name)
+  ) {
     return {
-      input,
+      input: parentPath,
       resolvedPath: null,
       exists: false,
       isDirectory: false,
@@ -502,29 +527,16 @@ export async function createDirectory(
     };
   }
 
-  const resolved = path.resolve(input);
-  const name = path.basename(resolved);
-  if (!isValidBasename(name)) {
-    return {
-      input,
-      resolvedPath: resolved,
-      exists: false,
-      isDirectory: false,
-      readable: false,
-      writable: false,
-      allowed: false,
-      gitRepository: false,
-      branch: null,
-      errorCode: "INVALID_PATH",
-    };
-  }
+  const parentValidation = await resolveAndCheck(parentPath, roots, {
+    mustExist: true,
+    mustBeDirectory: true,
+    includeGit: false,
+  });
 
-  const parent = path.dirname(resolved);
-  const parentValidation = await resolveAndCheck(parent, roots, { mustExist: true, mustBeDirectory: true });
   if (!parentValidation.allowed || !parentValidation.exists || !parentValidation.isDirectory || !parentValidation.resolvedPath || !parentValidation.writable) {
     return {
-      input,
-      resolvedPath: resolved,
+      input: parentPath,
+      resolvedPath: parentValidation.resolvedPath,
       exists: false,
       isDirectory: false,
       readable: false,
@@ -536,18 +548,16 @@ export async function createDirectory(
     };
   }
 
-  const canonicalParent = parentValidation.resolvedPath;
-  const target = path.join(canonicalParent, name);
+  const target = path.join(parentValidation.resolvedPath, name);
   let created = false;
 
   try {
     try {
       const existing = await fs.realpath(target);
-      // Target already exists or is a symlink. Validate what it resolves to.
-      const existingValidation = await validateDirectory(existing, roots);
+      const existingValidation = await validateDirectory(existing, roots, { includeGit: options.includeGit ?? false });
       if (!existingValidation.allowed) {
         return {
-          input,
+          input: parentPath,
           resolvedPath: existing,
           exists: existingValidation.exists,
           isDirectory: existingValidation.isDirectory,
@@ -563,7 +573,7 @@ export async function createDirectory(
         return existingValidation;
       }
       return {
-        input,
+        input: parentPath,
         resolvedPath: existing,
         exists: true,
         isDirectory: false,
@@ -572,7 +582,7 @@ export async function createDirectory(
         allowed: true,
         gitRepository: false,
         branch: null,
-        errorCode: "NOT_A_DIRECTORY",
+        errorCode: "PATH_ALREADY_EXISTS",
       };
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
@@ -582,13 +592,13 @@ export async function createDirectory(
     await fs.mkdir(target);
     created = true;
 
-    const result = await validateDirectory(target, roots);
+    const result = await validateDirectory(target, roots, { includeGit: options.includeGit ?? false });
     if (!result.allowed || !result.exists || !result.isDirectory) {
       if (created) {
         await fs.rmdir(target).catch(() => {});
       }
       return {
-        input,
+        input: parentPath,
         resolvedPath: result.resolvedPath ?? target,
         exists: result.exists,
         isDirectory: result.isDirectory,
@@ -605,8 +615,8 @@ export async function createDirectory(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     return {
-      input,
-      resolvedPath: resolved,
+      input: parentPath,
+      resolvedPath: target,
       exists: false,
       isDirectory: false,
       readable: false,
@@ -614,7 +624,12 @@ export async function createDirectory(
       allowed: false,
       gitRepository: false,
       branch: null,
-      errorCode: code === "EACCES" || code === "EPERM" ? "PERMISSION_DENIED" : code === "EEXIST" ? "NOT_A_DIRECTORY" : "IO_ERROR",
+      errorCode:
+        code === "EACCES" || code === "EPERM"
+          ? "PERMISSION_DENIED"
+          : code === "EEXIST"
+            ? "PATH_ALREADY_EXISTS"
+            : "IO_ERROR",
     };
   }
 }
@@ -646,6 +661,25 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return a.every((v, i) => v === b[i]);
 }
 
+async function mapWithLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const chunk = items.slice(i, i + limit);
+    results.push(...(await Promise.all(chunk.map(fn))));
+  }
+  return results;
+}
+
+async function canonicalRecentPath(
+  raw: string,
+  roots: string[],
+): Promise<string | null> {
+  if (!raw) return null;
+  const v = await validateDirectory(raw, roots, { includeGit: false });
+  if (!v.allowed || !v.exists || !v.isDirectory || !v.readable || !v.resolvedPath) return null;
+  return v.resolvedPath;
+}
+
 export async function listRecentWorkspaces(
   primaryCwd: string,
   store: Store,
@@ -656,40 +690,36 @@ export async function listRecentWorkspaces(
   const seen = new Set<string>();
   const recent: string[] = [];
 
-  const add = async (raw: string) => {
-    if (!raw || seen.has(raw)) return;
-    const v = await validateDirectory(raw, roots);
-    if (!v.allowed || !v.exists || !v.isDirectory || !v.readable || !v.resolvedPath) return;
-    const canonical = v.resolvedPath;
-    if (seen.has(canonical)) return;
+  function addCanonical(canonical: string | null) {
+    if (!canonical || seen.has(canonical)) return;
     seen.add(canonical);
     recent.push(canonical);
-  };
+  }
 
-  // Canonicalise the stored MRU list and persist the cleaned version.
+  // Canonicalise the stored MRU list with bounded concurrency and persist the cleaned version.
+  const rawWorkspaces = store.workspaces();
+  const cleanedCandidates = await mapWithLimit(rawWorkspaces, 4, (w) => canonicalRecentPath(w, roots));
   const cleaned: string[] = [];
-  for (const w of store.workspaces()) {
-    const v = await validateDirectory(w, roots);
-    if (!v.allowed || !v.exists || !v.isDirectory || !v.readable || !v.resolvedPath) continue;
-    const canonical = v.resolvedPath;
-    if (cleaned.includes(canonical)) continue;
+  for (const canonical of cleanedCandidates) {
+    if (!canonical || cleaned.includes(canonical)) continue;
     cleaned.push(canonical);
   }
-  if (!arraysEqual(store.workspaces(), cleaned)) {
+  if (!arraysEqual(rawWorkspaces, cleaned)) {
     store.setWorkspaces(cleaned);
   }
 
-  await add(primaryCwd);
-  for (const w of cleaned) await add(w);
+  addCanonical(await canonicalRecentPath(primaryCwd, roots));
+  for (const w of cleaned) addCanonical(w);
 
   const sessions = Object.values(store.sessions()).sort((a, b) =>
     (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""),
   );
-  for (const s of sessions) {
-    if (!s) continue;
-    // Exclude generated worktrees; the base root is already in workspaces.
-    if (s.worktree && s.cwd === s.worktree) continue;
-    await add(s.cwd);
+  const sessionCwds = sessions
+    .filter((s): s is NonNullable<typeof s> => !!s && !(s.worktree && s.cwd === s.worktree))
+    .map((s) => s.cwd);
+  const sessionCandidates = await mapWithLimit(sessionCwds, 4, (cwd) => canonicalRecentPath(cwd, roots));
+  for (const canonical of sessionCandidates) {
+    addCanonical(canonical);
   }
 
   return recent.slice(0, max);

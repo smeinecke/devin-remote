@@ -14,23 +14,59 @@ import type {
   UsageResponse,
 } from "./types";
 
+export class ApiResponseError<T = unknown> extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public payload: T | null,
+  ) {
+    super(message);
+  }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function isFilesystemPayload(value: unknown): value is { allowed?: boolean; errorCode?: string } {
+  return isObject(value) && (typeof value.allowed === "boolean" || typeof value.errorCode === "string");
+}
+
+export function directoryListingFromError(error: unknown): DirectoryListingResponse | null {
+  if (!(error instanceof ApiResponseError)) return null;
+  const payload = error.payload;
+  if (!isFilesystemPayload(payload)) return null;
+  return (payload as DirectoryListingResponse) ?? null;
+}
+
+export function directoryValidationFromError(error: unknown): DirectoryValidationResponse | null {
+  if (!(error instanceof ApiResponseError)) return null;
+  const payload = error.payload;
+  if (!isFilesystemPayload(payload)) return null;
+  return (payload as DirectoryValidationResponse) ?? null;
+}
+
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const response = await fetch(url, {
     method,
     headers: body !== undefined ? { "content-type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    let msg = `${method} ${url} → ${res.status}`;
-    try {
-      const data = (await res.json()) as { error?: string };
-      if (data.error) msg = data.error;
-    } catch {
-      /* */
-    }
-    throw new Error(msg);
+
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    // Non-JSON response.
   }
-  return (await res.json()) as T;
+
+  if (!response.ok) {
+    const message =
+      isObject(payload) && typeof payload.error === "string" ? payload.error : `${method} ${url} → ${response.status}`;
+    throw new ApiResponseError(message, response.status, payload);
+  }
+
+  return payload as T;
 }
 
 export const api = {
@@ -120,8 +156,8 @@ export const api = {
   validateDirectory: (path: string) =>
     req<DirectoryValidationResponse>("POST", "/api/filesystem/validate-directory", { path }),
 
-  createDirectory: (path: string) =>
-    req<DirectoryValidationResponse>("POST", "/api/filesystem/create-directory", { path }),
+  createDirectory: (params: { parentPath: string; name: string }) =>
+    req<DirectoryValidationResponse>("POST", "/api/filesystem/create-directory", params),
 
   usage: () => req<UsageResponse>("GET", "/api/usage"),
 

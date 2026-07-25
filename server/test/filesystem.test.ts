@@ -111,7 +111,7 @@ describe("filesystem API", () => {
 
   it("creates a directory inside an allowed root", async () => {
     const target = path.join(dirs.root, "new-project");
-    const result = await createDirectory(target, roots);
+    const result = await createDirectory(dirs.root, "new-project", roots);
     assert.strictEqual(result.allowed, true);
     assert.strictEqual(result.exists, true);
     assert.strictEqual(result.isDirectory, true);
@@ -119,9 +119,9 @@ describe("filesystem API", () => {
     assert.ok(stat.isDirectory());
   });
 
-  it("creates a directory through a normalised path", async () => {
-    const target = path.join(dirs.root, "projects", "..", "new-project");
-    const result = await createDirectory(target, roots);
+  it("creates a directory through a normalised parent path", async () => {
+    const parent = path.join(dirs.root, "projects", "..");
+    const result = await createDirectory(parent, "new-project", roots);
     assert.strictEqual(result.allowed, true);
     assert.strictEqual(result.exists, true);
     assert.strictEqual(result.isDirectory, true);
@@ -135,8 +135,7 @@ describe("filesystem API", () => {
     const link = path.join(dirs.root, "link");
     await fs.mkdir(subdir);
     await fs.symlink(subdir, link, "dir");
-    const target = path.join(link, "new");
-    const result = await createDirectory(target, roots);
+    const result = await createDirectory(link, "new", roots);
     assert.strictEqual(result.allowed, true);
     assert.strictEqual(result.exists, true);
     assert.strictEqual(result.isDirectory, true);
@@ -147,8 +146,7 @@ describe("filesystem API", () => {
   it("rejects creating a directory through a symlink parent that escapes", async () => {
     const link = path.join(dirs.root, "escape-link");
     await fs.symlink(dirs.outside, link, "dir");
-    const target = path.join(link, "new");
-    const result = await createDirectory(target, roots);
+    const result = await createDirectory(link, "new", roots);
     assert.strictEqual(result.allowed, false);
     assert.ok(
       result.errorCode === "SYMLINK_ESCAPE" || result.errorCode === "OUTSIDE_ALLOWED_ROOT",
@@ -157,14 +155,13 @@ describe("filesystem API", () => {
   });
 
   it("rejects invalid folder names", async () => {
-    const result = await createDirectory(`${dirs.root}${path.sep}bad\0dir`, roots);
+    const result = await createDirectory(dirs.root, `bad\0dir`, roots);
     assert.strictEqual(result.allowed, false);
     assert.strictEqual(result.errorCode, "INVALID_PATH");
   });
 
   it("rejects directory creation outside allowed roots", async () => {
-    const target = path.join(dirs.outside, "new");
-    const result = await createDirectory(target, roots);
+    const result = await createDirectory(dirs.outside, "new", roots);
     assert.strictEqual(result.allowed, false);
     assert.strictEqual(result.errorCode, "OUTSIDE_ALLOWED_ROOT");
   });
@@ -349,5 +346,85 @@ describe("filesystem API", () => {
     const recent = await listRecentWorkspaces(primary, store, { DEVIN_REMOTE_WORKSPACE_ROOTS: "" });
     assert.deepStrictEqual(recent, [primary, base]);
     assert.deepStrictEqual(setWorkspaces, [base, primary]);
+  });
+
+  it("returns parent=null at the exact matched root and a parent inside the matched root", async () => {
+    const nestedRoot = dirs.nested;
+    const multiRoots = [dirs.root, nestedRoot];
+
+    const atNested = await listDirectories(nestedRoot, multiRoots);
+    assert.strictEqual(atNested.allowed, true);
+    assert.strictEqual(atNested.root.path, nestedRoot);
+    assert.strictEqual(atNested.parent, null);
+
+    const child = path.join(nestedRoot, "packages");
+    const atChild = await listDirectories(child, multiRoots);
+    assert.strictEqual(atChild.allowed, true);
+    assert.strictEqual(atChild.root.path, nestedRoot);
+    assert.strictEqual(atChild.parent, nestedRoot);
+    assert.ok(atChild.parent && isWithinRoot(nestedRoot, atChild.parent));
+  });
+
+  it("prevents parent navigation from leaving the matched nested root", async () => {
+    const nestedRoot = dirs.nested;
+    const multiRoots = [dirs.root, nestedRoot];
+    const target = path.join(nestedRoot, "packages");
+    const listing = await listDirectories(target, multiRoots);
+
+    assert.strictEqual(listing.parent, nestedRoot);
+    if (listing.parent) {
+      const up = await listDirectories(listing.parent, multiRoots);
+      assert.strictEqual(up.root.path, nestedRoot);
+      assert.strictEqual(up.parent, null);
+    }
+  });
+
+  it("rejects create-directory names containing separators", async () => {
+    const result = await createDirectory(dirs.root, "a/b", roots);
+    assert.strictEqual(result.allowed, false);
+    assert.strictEqual(result.errorCode, "INVALID_PATH");
+  });
+
+  it("rejects create-directory name '..'", async () => {
+    const result = await createDirectory(dirs.root, "..", roots);
+    assert.strictEqual(result.allowed, false);
+    assert.strictEqual(result.errorCode, "INVALID_PATH");
+  });
+
+  it("returns structured error bodies for disallowed listings", async () => {
+    const listing = await listDirectories(dirs.outside, roots);
+    assert.strictEqual(listing.allowed, false);
+    assert.ok(listing.errorCode);
+    assert.strictEqual(typeof listing.path, "string");
+    assert.ok(Array.isArray(listing.entries));
+  });
+
+  it("validateDirectory with includeGit=false never returns git metadata", async () => {
+    const v = await validateDirectory(dirs.root, roots, { includeGit: false });
+    assert.strictEqual(v.gitRepository, false);
+    assert.strictEqual(v.branch, null);
+  });
+
+  it("validateDirectory with includeGit=true can return git metadata when available", async () => {
+    // If git is unavailable or this is not a repo, it should still be safe.
+    const v = await validateDirectory(dirs.root, roots, { includeGit: true });
+    assert.strictEqual(typeof v.gitRepository, "boolean");
+    assert.strictEqual(v.allowed, true);
+  });
+
+  it("recent-workspace cleanup does not need git metadata", async () => {
+    const primary = path.join(dirs.tmp, "primary");
+    const base = path.join(dirs.root, "base");
+    await fs.mkdir(primary, { recursive: true });
+    await fs.mkdir(base, { recursive: true });
+
+    const store = {
+      workspaces: () => [base, primary],
+      sessions: () => ({}),
+      setWorkspaces: () => {},
+    } as any;
+
+    const recent = await listRecentWorkspaces(primary, store, { DEVIN_REMOTE_WORKSPACE_ROOTS: "" });
+    assert.deepStrictEqual(recent, [primary, base]);
   });
 });

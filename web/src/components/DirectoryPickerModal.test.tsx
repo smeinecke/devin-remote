@@ -113,9 +113,9 @@ describe("DirectoryPickerModal", () => {
     listSpy = vi.spyOn(api, "listDirectories").mockImplementation(async (path: string, hidden?: boolean) => {
       return makeListing(path, defaultRoots.map((r) => r.path), !!hidden);
     });
-    createSpy = vi.spyOn(api, "createDirectory").mockImplementation(async (path: string) => ({
-      input: path,
-      resolvedPath: path,
+    createSpy = vi.spyOn(api, "createDirectory").mockImplementation(async (params: { parentPath: string; name: string }) => ({
+      input: params.parentPath,
+      resolvedPath: `${params.parentPath.replace(/\/+$/, "")}/${params.name}`,
       exists: true,
       isDirectory: true,
       readable: true,
@@ -368,7 +368,7 @@ describe("DirectoryPickerModal", () => {
     fireEvent.change(input, { target: { value: "new-dir" } });
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
-    await waitFor(() => expect(createSpy).toHaveBeenCalledWith("/home/calvin/projects/new-dir"));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" }));
 
     rerender(
       <TooltipProvider delayDuration={0}>
@@ -418,7 +418,7 @@ describe("DirectoryPickerModal", () => {
     fireEvent.change(input, { target: { value: "old-dir" } });
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
-    await waitFor(() => expect(createSpy).toHaveBeenCalledWith("/home/calvin/projects/old-dir"));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "old-dir" }));
 
     rerender(
       <TooltipProvider delayDuration={0}>
@@ -448,7 +448,7 @@ describe("DirectoryPickerModal", () => {
     fireEvent.change(newInput, { target: { value: "new-dir" } });
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
-    await waitFor(() => expect(createSpy).toHaveBeenLastCalledWith("/home/calvin/projects/new-dir"));
+    await waitFor(() => expect(createSpy).toHaveBeenLastCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" }));
 
     resolveOld({
       input: "/home/calvin/projects/old-dir",
@@ -482,7 +482,7 @@ describe("DirectoryPickerModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
     await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
-    expect(createSpy).toHaveBeenCalledWith("/home/calvin/projects/new-dir");
+    expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" });
 
     resolveCreate({
       input: "/home/calvin/projects/new-dir",
@@ -717,7 +717,7 @@ describe("DirectoryPickerModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
     await waitFor(() => {
-      expect(createSpy).toHaveBeenCalledWith("/home/calvin/projects/new-dir");
+      expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" });
     });
   });
 

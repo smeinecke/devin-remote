@@ -50,8 +50,10 @@ export async function isGitRepository(dir: string): Promise<boolean> {
 export async function createWorktree(
   sessionId: string,
   baseCwd: string,
+  knownRoot?: string | null,
+  knownBaseCommit?: string,
 ): Promise<WorktreeInfo> {
-  const root = await findGitRoot(baseCwd);
+  const root = knownRoot !== undefined ? knownRoot : await findGitRoot(baseCwd);
   if (!root) {
     return { root: baseCwd, worktree: baseCwd, branch: "", isIsolated: false, baseCommit: "" };
   }
@@ -71,8 +73,8 @@ export async function createWorktree(
   await fs.mkdir(worktreesDir, { recursive: true });
 
   // Resolve the base revision from the requested cwd, not the root worktree HEAD.
-  const { stdout: headOut } = await execFileP("git", ["-C", baseCwd, "rev-parse", "HEAD"], { timeout: 10_000 });
-  const baseCommit = headOut.trim();
+  const baseCommit =
+    knownBaseCommit ?? (await execFileP("git", ["-C", baseCwd, "rev-parse", "HEAD"], { timeout: 10_000 })).stdout.trim();
 
   await execFileP("git", ["-C", root, "worktree", "add", "-b", branch, worktree, baseCommit], { timeout: 30_000 });
 
