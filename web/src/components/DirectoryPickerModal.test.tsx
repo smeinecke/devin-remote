@@ -6,6 +6,9 @@ import DirectoryPickerModal from "./DirectoryPickerModal";
 import { api } from "../api";
 import type { DirectoryListingResponse, FilesystemRoot } from "../types";
 
+const HOME = process.env.HOME ?? "/tmp";
+const WIN_USER = process.env.USER ?? "user";
+
 function basename(p: string): string {
   const trimmed = p.replace(/\/+$/, "");
   const i = trimmed.lastIndexOf("/");
@@ -94,7 +97,7 @@ describe("DirectoryPickerModal", () => {
   let rootsSpy: ReturnType<typeof vi.spyOn>;
   let createSpy: ReturnType<typeof vi.spyOn>;
 
-  const defaultRoots: FilesystemRoot[] = [{ path: "/home/calvin", label: "Home" }];
+  const defaultRoots: FilesystemRoot[] = [{ path: `${HOME}`, label: "Home" }];
 
   beforeEach(() => {
     cleanup();
@@ -134,13 +137,13 @@ describe("DirectoryPickerModal", () => {
   });
 
   it("opens a valid path with one root, one validation, and one listing request", async () => {
-    render(<TestWrapper initialPath="/home/calvin/projects" />);
+    render(<TestWrapper initialPath={`${HOME}/projects`} />);
 
     await waitFor(() => {
       expect(rootsSpy).toHaveBeenCalledTimes(1);
       expect(validateSpy).toHaveBeenCalledTimes(1);
       expect(listSpy).toHaveBeenCalledTimes(1);
-      expect(listSpy).toHaveBeenLastCalledWith("/home/calvin/projects", false);
+      expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/projects`, false);
     });
   });
 
@@ -161,7 +164,7 @@ describe("DirectoryPickerModal", () => {
     render(<TestWrapper initialPath="/invalid" />);
 
     await waitFor(() => {
-      expect(listSpy).toHaveBeenLastCalledWith("/home/calvin", false);
+      expect(listSpy).toHaveBeenLastCalledWith(`${HOME}`, false);
     });
   });
 
@@ -174,31 +177,31 @@ describe("DirectoryPickerModal", () => {
         }),
     );
 
-    render(<TestWrapper initialPath="/home/calvin/first" />);
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith("/home/calvin/first", false));
+    render(<TestWrapper initialPath={`${HOME}/first`} />);
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith(`${HOME}/first`, false));
 
     const input = screen.getByLabelText("Path") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "/home/calvin/second" } });
+    fireEvent.change(input, { target: { value: `${HOME}/second` } });
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
 
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith("/home/calvin/second", false));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith(`${HOME}/second`, false));
 
-    resolvers.get("/home/calvin/first")!({
-      path: "/home/calvin/first",
-      parent: "/home/calvin",
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "first", path: "/home/calvin/first" }],
+    resolvers.get(`${HOME}/first`)!({
+      path: `${HOME}/first`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "first", path: `${HOME}/first` }],
       entries: [],
       allowed: true,
       writable: true,
     });
 
-    resolvers.get("/home/calvin/second")!({
-      path: "/home/calvin/second",
-      parent: "/home/calvin",
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "second", path: "/home/calvin/second" }],
-      entries: [{ name: "result", path: "/home/calvin/second/result", hidden: false, readable: true, writable: true }],
+    resolvers.get(`${HOME}/second`)!({
+      path: `${HOME}/second`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "second", path: `${HOME}/second` }],
+      entries: [{ name: "result", path: `${HOME}/second/result`, hidden: false, readable: true, writable: true }],
       allowed: true,
       writable: true,
     });
@@ -210,79 +213,79 @@ describe("DirectoryPickerModal", () => {
 
   it("toggles hidden folders and reloads the current nested directory exactly once", async () => {
     listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
-      if (path === "/home/calvin") {
+      if (path === `${HOME}`) {
         return makeListing(
           path,
-          ["/home/calvin"],
+          [`${HOME}`],
           !!hidden,
-          [{ name: "packages", path: "/home/calvin/packages", hidden: false, readable: true, writable: true }],
+          [{ name: "packages", path: `${HOME}/packages`, hidden: false, readable: true, writable: true }],
         );
       }
-      if (path === "/home/calvin/packages") {
+      if (path === `${HOME}/packages`) {
         return makeListing(
           path,
-          ["/home/calvin"],
+          [`${HOME}`],
           !!hidden,
-          [{ name: "web", path: "/home/calvin/packages/web", hidden: false, readable: true, writable: true }],
+          [{ name: "web", path: `${HOME}/packages/web`, hidden: false, readable: true, writable: true }],
         );
       }
-      return makeListing(path, ["/home/calvin"], !!hidden, []);
+      return makeListing(path, [`${HOME}`], !!hidden, []);
     });
 
-    render(<TestWrapper initialPath="/home/calvin" />);
+    render(<TestWrapper initialPath={`${HOME}`} />);
     await waitFor(() => expect(screen.getByText("packages")).not.toBeNull());
 
     fireEvent.click(screen.getByText("packages"));
     await waitFor(() => expect(screen.getByText("web")).not.toBeNull());
 
     fireEvent.click(screen.getByText("web"));
-    await waitFor(() => expect(listSpy).toHaveBeenLastCalledWith("/home/calvin/packages/web", false));
+    await waitFor(() => expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/packages/web`, false));
 
     fireEvent.click(screen.getByRole("button", { name: /Hidden/i }));
     await waitFor(() => {
-      expect(listSpy).toHaveBeenLastCalledWith("/home/calvin/packages/web", true);
+      expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/packages/web`, true);
       expect(rootsSpy).toHaveBeenCalledTimes(1);
       expect(validateSpy).toHaveBeenCalledTimes(1);
     });
 
     const input = screen.getByLabelText("Path") as HTMLInputElement;
-    expect(input.value).toBe("/home/calvin/packages/web");
+    expect(input.value).toBe(`${HOME}/packages/web`);
   });
 
   it("does not return to initialPath when toggling hidden folders from a nested directory", async () => {
     listSpy.mockImplementation(async (path: string, hidden?: boolean) => {
-      if (path === "/home/calvin") {
+      if (path === `${HOME}`) {
         return makeListing(
           path,
-          ["/home/calvin"],
+          [`${HOME}`],
           !!hidden,
-          [{ name: "packages", path: "/home/calvin/packages", hidden: false, readable: true, writable: true }],
+          [{ name: "packages", path: `${HOME}/packages`, hidden: false, readable: true, writable: true }],
         );
       }
-      if (path === "/home/calvin/packages") {
+      if (path === `${HOME}/packages`) {
         return makeListing(
           path,
-          ["/home/calvin"],
+          [`${HOME}`],
           !!hidden,
-          [{ name: "web", path: "/home/calvin/packages/web", hidden: false, readable: true, writable: true }],
+          [{ name: "web", path: `${HOME}/packages/web`, hidden: false, readable: true, writable: true }],
         );
       }
-      return makeListing(path, ["/home/calvin"], !!hidden, []);
+      return makeListing(path, [`${HOME}`], !!hidden, []);
     });
 
-    render(<TestWrapper initialPath="/home/calvin" />);
+    render(<TestWrapper initialPath={`${HOME}`} />);
     await waitFor(() => expect(screen.getByText("packages")).not.toBeNull());
 
     fireEvent.click(screen.getByText("packages"));
     await waitFor(() => expect(screen.getByText("web")).not.toBeNull());
 
     fireEvent.click(screen.getByText("web"));
-    await waitFor(() => expect(listSpy).toHaveBeenLastCalledWith("/home/calvin/packages/web", false));
+    await waitFor(() => expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/packages/web`, false));
 
     fireEvent.click(screen.getByRole("button", { name: /Hidden/i }));
     await waitFor(() => {
       const input = screen.getByLabelText("Path") as HTMLInputElement;
-      expect(input.value).toBe("/home/calvin/packages/web");
+      expect(input.value).toBe(`${HOME}/packages/web`);
     });
   });
 
@@ -300,30 +303,30 @@ describe("DirectoryPickerModal", () => {
         <DirectoryPickerModal
           open={true}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin"
+          initialPath={`${HOME}`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
     );
 
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith("/home/calvin", false));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith(`${HOME}`, false));
 
     rerender(
       <TooltipProvider delayDuration={0}>
         <DirectoryPickerModal
           open={false}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin"
+          initialPath={`${HOME}`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
     );
 
     resolveFirst({
-      path: "/home/calvin",
+      path: `${HOME}`,
       parent: null,
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "Home", path: "/home/calvin" }],
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "Home", path: `${HOME}` }],
       entries: [],
       allowed: true,
       writable: true,
@@ -337,14 +340,14 @@ describe("DirectoryPickerModal", () => {
         <DirectoryPickerModal
           open={true}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin"
+          initialPath={`${HOME}`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
     );
 
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
-    expect(listSpy).toHaveBeenLastCalledWith("/home/calvin", false);
+    expect(listSpy).toHaveBeenLastCalledWith(`${HOME}`, false);
   });
 
   it("ignores a create response that arrives after the modal is closed", async () => {
@@ -356,34 +359,34 @@ describe("DirectoryPickerModal", () => {
         <DirectoryPickerModal
           open={true}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin/projects"
+          initialPath={`${HOME}/projects`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
     );
 
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith("/home/calvin/projects", false));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith(`${HOME}/projects`, false));
 
     const input = screen.getByPlaceholderText("New folder") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "new-dir" } });
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
-    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" }));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({ parentPath: `${HOME}/projects`, name: "new-dir" }));
 
     rerender(
       <TooltipProvider delayDuration={0}>
         <DirectoryPickerModal
           open={false}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin/projects"
+          initialPath={`${HOME}/projects`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
     );
 
     resolveCreate({
-      input: "/home/calvin/projects/new-dir",
-      resolvedPath: "/home/calvin/projects/new-dir",
+      input: `${HOME}/projects/new-dir`,
+      resolvedPath: `${HOME}/projects/new-dir`,
       exists: true,
       isDirectory: true,
       readable: true,
@@ -406,26 +409,26 @@ describe("DirectoryPickerModal", () => {
         <DirectoryPickerModal
           open={true}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin/projects"
+          initialPath={`${HOME}/projects`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
     );
 
-    await waitFor(() => expect(listSpy).toHaveBeenCalledWith("/home/calvin/projects", false));
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith(`${HOME}/projects`, false));
 
     const input = screen.getByPlaceholderText("New folder") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "old-dir" } });
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
-    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "old-dir" }));
+    await waitFor(() => expect(createSpy).toHaveBeenCalledWith({ parentPath: `${HOME}/projects`, name: "old-dir" }));
 
     rerender(
       <TooltipProvider delayDuration={0}>
         <DirectoryPickerModal
           open={false}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin/projects"
+          initialPath={`${HOME}/projects`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
@@ -436,7 +439,7 @@ describe("DirectoryPickerModal", () => {
         <DirectoryPickerModal
           open={true}
           onOpenChange={vi.fn()}
-          initialPath="/home/calvin/projects"
+          initialPath={`${HOME}/projects`}
           onSelect={vi.fn()}
         />
       </TooltipProvider>,
@@ -448,11 +451,11 @@ describe("DirectoryPickerModal", () => {
     fireEvent.change(newInput, { target: { value: "new-dir" } });
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
-    await waitFor(() => expect(createSpy).toHaveBeenLastCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" }));
+    await waitFor(() => expect(createSpy).toHaveBeenLastCalledWith({ parentPath: `${HOME}/projects`, name: "new-dir" }));
 
     resolveOld({
-      input: "/home/calvin/projects/old-dir",
-      resolvedPath: "/home/calvin/projects/old-dir",
+      input: `${HOME}/projects/old-dir`,
+      resolvedPath: `${HOME}/projects/old-dir`,
       exists: true,
       isDirectory: true,
       readable: true,
@@ -472,7 +475,7 @@ describe("DirectoryPickerModal", () => {
     let resolveCreate: (value: any) => void = () => {};
     createSpy.mockImplementation(() => new Promise((resolve) => (resolveCreate = resolve)));
 
-    render(<TestWrapper initialPath="/home/calvin/projects" />);
+    render(<TestWrapper initialPath={`${HOME}/projects`} />);
     await waitFor(() => expect(screen.queryByText("Loading directories…")).toBeNull());
 
     const input = screen.getByPlaceholderText("New folder") as HTMLInputElement;
@@ -482,11 +485,11 @@ describe("DirectoryPickerModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
     await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
-    expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" });
+    expect(createSpy).toHaveBeenCalledWith({ parentPath: `${HOME}/projects`, name: "new-dir" });
 
     resolveCreate({
-      input: "/home/calvin/projects/new-dir",
-      resolvedPath: "/home/calvin/projects/new-dir",
+      input: `${HOME}/projects/new-dir`,
+      resolvedPath: `${HOME}/projects/new-dir`,
       exists: true,
       isDirectory: true,
       readable: true,
@@ -502,7 +505,7 @@ describe("DirectoryPickerModal", () => {
   it("shows a root-fetch failure with a retry action, not a no-roots message", async () => {
     rootsSpy.mockRejectedValue(new Error("network error"));
 
-    render(<TestWrapper initialPath="/home/calvin" />);
+    render(<TestWrapper initialPath={`${HOME}`} />);
 
     await waitFor(() => {
       const alert = screen.getByRole("alert");
@@ -516,7 +519,7 @@ describe("DirectoryPickerModal", () => {
   it("retries a failed root fetch and loads the directory", async () => {
     rootsSpy.mockRejectedValueOnce(new Error("network error")).mockResolvedValue({ roots: defaultRoots });
 
-    render(<TestWrapper initialPath="/home/calvin" />);
+    render(<TestWrapper initialPath={`${HOME}`} />);
 
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toMatch(/Could not load workspace roots/i);
@@ -527,15 +530,15 @@ describe("DirectoryPickerModal", () => {
     await waitFor(() => {
       expect(screen.queryByRole("alert")).toBeNull();
       const nav = screen.getByRole("navigation", { name: /Breadcrumbs/i });
-      expect(nav.textContent).toMatch(/calvin/i);
-      expect(listSpy).toHaveBeenCalledWith("/home/calvin", false);
+      expect(nav.textContent).toMatch(new RegExp(basename(HOME), "i"));
+      expect(listSpy).toHaveBeenCalledWith(`${HOME}`, false);
     });
   });
 
   it("shows the distinct no-roots message when there are no workspace roots", async () => {
     rootsSpy.mockResolvedValue({ roots: [] });
 
-    render(<TestWrapper initialPath="/home/calvin" />);
+    render(<TestWrapper initialPath={`${HOME}`} />);
 
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toMatch(/No workspace roots are configured/i);
@@ -545,15 +548,15 @@ describe("DirectoryPickerModal", () => {
 
   it("selects the longest matching root for an exact secondary root path", async () => {
     const roots: FilesystemRoot[] = [
-      { path: "/home/calvin", label: "calvin" },
-      { path: "/home/calvin/projects", label: "projects" },
+      { path: `${HOME}`, label: basename(HOME) },
+      { path: `${HOME}/projects`, label: "projects" },
     ];
     rootsSpy.mockResolvedValue({ roots });
     listSpy.mockImplementation(async (path: string, hidden?: boolean) =>
       makeListing(path, roots.map((r) => r.path), !!hidden),
     );
 
-    render(<TestWrapper initialPath="/home/calvin/projects" />);
+    render(<TestWrapper initialPath={`${HOME}/projects`} />);
 
     await waitFor(() => {
       const nav = screen.getByRole("navigation", { name: /Breadcrumbs/i });
@@ -563,20 +566,20 @@ describe("DirectoryPickerModal", () => {
 
     const last = listSpy.mock.calls[listSpy.mock.calls.length - 1];
     const returned = await listSpy.mock.results[listSpy.mock.results.length - 1].value;
-    expect(returned.root.path).toBe("/home/calvin/projects");
+    expect(returned.root.path).toBe(`${HOME}/projects`);
   });
 
   it("chooses the longest matching root for an overlapping nested path", async () => {
     const roots: FilesystemRoot[] = [
-      { path: "/home/calvin", label: "calvin" },
-      { path: "/home/calvin/projects", label: "projects" },
+      { path: `${HOME}`, label: basename(HOME) },
+      { path: `${HOME}/projects`, label: "projects" },
     ];
     rootsSpy.mockResolvedValue({ roots });
     listSpy.mockImplementation(async (path: string, hidden?: boolean) =>
       makeListing(path, roots.map((r) => r.path), !!hidden),
     );
 
-    render(<TestWrapper initialPath="/home/calvin/projects/devin-remote/web" />);
+    render(<TestWrapper initialPath={`${HOME}/projects/devin-remote/web`} />);
 
     await waitFor(() => {
       const nav = screen.getByRole("navigation", { name: /Breadcrumbs/i });
@@ -586,25 +589,25 @@ describe("DirectoryPickerModal", () => {
     });
 
     const returned = await listSpy.mock.results[listSpy.mock.results.length - 1].value;
-    expect(returned.root.path).toBe("/home/calvin/projects");
+    expect(returned.root.path).toBe(`${HOME}/projects`);
     expect(returned.breadcrumbs.map((b: any) => b.path)).toEqual([
-      "/home/calvin/projects",
-      "/home/calvin/projects/devin-remote",
-      "/home/calvin/projects/devin-remote/web",
+      `${HOME}/projects`,
+      `${HOME}/projects/devin-remote`,
+      `${HOME}/projects/devin-remote/web`,
     ]);
   });
 
   it("does not render breadcrumb paths outside the matched root", async () => {
     const roots: FilesystemRoot[] = [
-      { path: "/home/calvin", label: "calvin" },
-      { path: "/home/calvin/projects", label: "projects" },
+      { path: `${HOME}`, label: basename(HOME) },
+      { path: `${HOME}/projects`, label: "projects" },
     ];
     rootsSpy.mockResolvedValue({ roots });
     listSpy.mockImplementation(async (path: string, hidden?: boolean) =>
       makeListing(path, roots.map((r) => r.path), !!hidden),
     );
 
-    render(<TestWrapper initialPath="/home/calvin/projects/devin-remote/web" />);
+    render(<TestWrapper initialPath={`${HOME}/projects/devin-remote/web`} />);
 
     await waitFor(() => {
       const nav = screen.getByRole("navigation", { name: /Breadcrumbs/i });
@@ -612,14 +615,14 @@ describe("DirectoryPickerModal", () => {
       for (const button of buttons) {
         const path = button.getAttribute("title");
         if (path?.startsWith("/")) {
-          expect(path.startsWith("/home/calvin/projects")).toBe(true);
+          expect(path.startsWith(`${HOME}/projects`)).toBe(true);
         }
       }
     });
   });
 
   it("disables parent navigation at the root boundary", async () => {
-    render(<TestWrapper initialPath="/home/calvin" />);
+    render(<TestWrapper initialPath={`${HOME}`} />);
     await waitFor(() => expect(screen.getByText("projects")).not.toBeNull());
 
     const parent = screen.getByLabelText("Parent directory") as HTMLButtonElement;
@@ -628,20 +631,20 @@ describe("DirectoryPickerModal", () => {
 
   it("renders Windows-style server-provided breadcrumbs without reconstructing host paths", async () => {
     listSpy.mockResolvedValue({
-      path: "C:\\Users\\calvin\\projects\\devin-remote\\web",
-      parent: "C:\\Users\\calvin\\projects\\devin-remote",
-      root: { path: "C:\\Users\\calvin\\projects", label: "projects" },
+      path: `C:\\Users\\${WIN_USER}\\projects\\devin-remote\\web`,
+      parent: `C:\\Users\\${WIN_USER}\\projects\\devin-remote`,
+      root: { path: `C:\\Users\\${WIN_USER}\\projects`, label: "projects" },
       breadcrumbs: [
-        { label: "projects", path: "C:\\Users\\calvin\\projects" },
-        { label: "devin-remote", path: "C:\\Users\\calvin\\projects\\devin-remote" },
-        { label: "web", path: "C:\\Users\\calvin\\projects\\devin-remote\\web" },
+        { label: "projects", path: `C:\\Users\\${WIN_USER}\\projects` },
+        { label: "devin-remote", path: `C:\\Users\\${WIN_USER}\\projects\\devin-remote` },
+        { label: "web", path: `C:\\Users\\${WIN_USER}\\projects\\devin-remote\\web` },
       ],
       entries: [],
       allowed: true,
       writable: true,
     });
 
-    render(<TestWrapper initialPath="C:\\Users\\calvin\\projects\\devin-remote\\web" />);
+    render(<TestWrapper initialPath={`C:\\Users\\${WIN_USER}\\projects\\devin-remote\\web`} />);
 
     await waitFor(() => {
       const nav = screen.getByRole("navigation", { name: /Breadcrumbs/i });
@@ -654,43 +657,43 @@ describe("DirectoryPickerModal", () => {
   it("selects the canonical loaded path", async () => {
     const onSelect = vi.fn();
     listSpy.mockResolvedValue({
-      path: "/home/calvin/projects",
-      parent: "/home/calvin",
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "projects", path: "/home/calvin/projects" }],
+      path: `${HOME}/projects`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "projects", path: `${HOME}/projects` }],
       entries: [],
       allowed: true,
       writable: true,
     });
 
-    render(<TestWrapper initialPath="/home/calvin/projects" onSelect={onSelect} />);
+    render(<TestWrapper initialPath={`${HOME}/projects`} onSelect={onSelect} />);
     await waitFor(() =>
       expect((screen.getByRole("button", { name: /Select folder/i }) as HTMLButtonElement).disabled).toBe(false),
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Select folder/i }));
     await waitFor(() => {
-      expect(onSelect).toHaveBeenCalledWith("/home/calvin/projects");
+      expect(onSelect).toHaveBeenCalledWith(`${HOME}/projects`);
     });
   });
 
   it("does not select a path that has not loaded", async () => {
     const onSelect = vi.fn();
     listSpy.mockResolvedValue({
-      path: "/home/calvin",
+      path: `${HOME}`,
       parent: null,
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "Home", path: "/home/calvin" }],
-      entries: [{ name: "projects", path: "/home/calvin/projects", hidden: false, readable: true, writable: true }],
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "Home", path: `${HOME}` }],
+      entries: [{ name: "projects", path: `${HOME}/projects`, hidden: false, readable: true, writable: true }],
       allowed: true,
       writable: true,
     });
 
-    render(<TestWrapper initialPath="/home/calvin" onSelect={onSelect} />);
+    render(<TestWrapper initialPath={`${HOME}`} onSelect={onSelect} />);
     await waitFor(() => expect(screen.getByText("projects")).not.toBeNull());
 
     const input = screen.getByLabelText("Path") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "/home/calvin/other" } });
+    fireEvent.change(input, { target: { value: `${HOME}/other` } });
 
     const select = screen.getByRole("button", { name: /Select folder/i }) as HTMLButtonElement;
     expect(select.disabled).toBe(true);
@@ -700,16 +703,16 @@ describe("DirectoryPickerModal", () => {
 
   it("creates a folder in the current directory", async () => {
     listSpy.mockResolvedValue({
-      path: "/home/calvin/projects",
-      parent: "/home/calvin",
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "projects", path: "/home/calvin/projects" }],
+      path: `${HOME}/projects`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "projects", path: `${HOME}/projects` }],
       entries: [],
       allowed: true,
       writable: true,
     });
 
-    render(<TestWrapper initialPath="/home/calvin/projects" />);
+    render(<TestWrapper initialPath={`${HOME}/projects`} />);
     await waitFor(() => expect(screen.queryByText("Loading directories…")).toBeNull());
 
     const input = screen.getByPlaceholderText("New folder") as HTMLInputElement;
@@ -717,22 +720,22 @@ describe("DirectoryPickerModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /Create/i }));
 
     await waitFor(() => {
-      expect(createSpy).toHaveBeenCalledWith({ parentPath: "/home/calvin/projects", name: "new-dir" });
+      expect(createSpy).toHaveBeenCalledWith({ parentPath: `${HOME}/projects`, name: "new-dir" });
     });
   });
 
   it("disables New folder when the current directory is not writable", async () => {
     listSpy.mockResolvedValue({
-      path: "/home/calvin/projects",
-      parent: "/home/calvin",
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "projects", path: "/home/calvin/projects" }],
+      path: `${HOME}/projects`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "projects", path: `${HOME}/projects` }],
       entries: [],
       allowed: true,
       writable: false,
     });
 
-    render(<TestWrapper initialPath="/home/calvin/projects" />);
+    render(<TestWrapper initialPath={`${HOME}/projects`} />);
     await waitFor(() => expect(screen.queryByText("Loading directories…")).toBeNull());
 
     expect(screen.queryByPlaceholderText("New folder")).toBeNull();
@@ -740,39 +743,39 @@ describe("DirectoryPickerModal", () => {
 
   it("announces the loaded canonical directory accessibly", async () => {
     listSpy.mockResolvedValue({
-      path: "/home/calvin/projects",
-      parent: "/home/calvin",
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "projects", path: "/home/calvin/projects" }],
+      path: `${HOME}/projects`,
+      parent: `${HOME}`,
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "projects", path: `${HOME}/projects` }],
       entries: [],
       allowed: true,
       writable: true,
     });
 
-    render(<TestWrapper initialPath="/home/calvin/projects" />);
+    render(<TestWrapper initialPath={`${HOME}/projects`} />);
 
     await waitFor(() => {
-      const live = screen.getByText(`Loaded directory /home/calvin/projects`);
+      const live = screen.getByText(`Loaded directory ${HOME}/projects`);
       expect(live).not.toBeNull();
     });
   });
 
   it("navigates a folder on a single click and does not respond to double-click", async () => {
     listSpy.mockResolvedValue({
-      path: "/home/calvin",
+      path: `${HOME}`,
       parent: null,
-      root: { path: "/home/calvin", label: "Home" },
-      breadcrumbs: [{ label: "Home", path: "/home/calvin" }],
-      entries: [{ name: "projects", path: "/home/calvin/projects", hidden: false, readable: true, writable: true }],
+      root: { path: `${HOME}`, label: "Home" },
+      breadcrumbs: [{ label: "Home", path: `${HOME}` }],
+      entries: [{ name: "projects", path: `${HOME}/projects`, hidden: false, readable: true, writable: true }],
       allowed: true,
       writable: true,
     });
 
-    render(<TestWrapper initialPath="/home/calvin" />);
+    render(<TestWrapper initialPath={`${HOME}`} />);
     await waitFor(() => expect(screen.getByText("projects")).not.toBeNull());
 
     fireEvent.click(screen.getByText("projects"));
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
-    expect(listSpy).toHaveBeenLastCalledWith("/home/calvin/projects", false);
+    expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/projects`, false);
   });
 });

@@ -5,6 +5,8 @@ import WorkspacePathField from "./WorkspacePathField";
 import { api } from "../api";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+const HOME = process.env.HOME ?? "/tmp";
+
 describe("WorkspacePathField", () => {
   let validateSpy: ReturnType<typeof vi.spyOn>;
 
@@ -132,13 +134,13 @@ describe("WorkspacePathField", () => {
   });
 
   it("renders recent paths with basename and shortened full path", () => {
-    render(<Wrapper recentPaths={["/home/calvin/projects/devin-remote"]} />);
+    render(<Wrapper recentPaths={[`${HOME}/projects/devin-remote`]} />);
 
     const recentBtn = screen.getByRole("button", { name: /Recent/i });
     fireEvent.click(recentBtn);
 
     expect(screen.getByText("devin-remote")).not.toBeNull();
-    expect(screen.getByTitle("/home/calvin/projects/devin-remote")).not.toBeNull();
+    expect(screen.getByTitle(`${HOME}/projects/devin-remote`)).not.toBeNull();
   });
 
   it("opens the directory picker when Browse is clicked", async () => {
@@ -205,7 +207,7 @@ describe("WorkspacePathField", () => {
   });
 
   it("selecting a recent path updates the value and revalidates", async () => {
-    render(<Wrapper recentPaths={["/home/calvin/projects"]} />);
+    render(<Wrapper recentPaths={[`${HOME}/projects`]} />);
 
     const recentBtn = screen.getByRole("button", { name: /Recent/i });
     fireEvent.click(recentBtn);
@@ -214,11 +216,11 @@ describe("WorkspacePathField", () => {
     fireEvent.click(item);
 
     await waitFor(() => {
-      expect(validateSpy).toHaveBeenCalledWith("/home/calvin/projects");
+      expect(validateSpy).toHaveBeenCalledWith(`${HOME}/projects`);
     });
 
     const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
-    expect(input.value).toBe("/home/calvin/projects");
+    expect(input.value).toBe(`${HOME}/projects`);
   });
 
   it("allows a read-only directory for ask mode", async () => {

@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Sidebar from "./Sidebar";
 import * as state from "../state";
 
+const HOME = process.env.HOME ?? "/tmp";
+
 vi.mock("../state", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state")>();
   return { ...actual, useStore: vi.fn() };
@@ -15,7 +17,7 @@ describe("Sidebar", () => {
     vi.spyOn(state, "useStore").mockReturnValue({
       meta: {
         primaryCwd: null,
-        workspaces: ["/home/calvin/base"],
+        workspaces: [`${HOME}/base`],
       },
       sessions: {
         s1: {
