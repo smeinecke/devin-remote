@@ -300,7 +300,7 @@ export default function DirectoryPickerModal({
       const result = await api.createDirectory({ parentPath, name });
       if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;
 
-      if (result.allowed && result.exists && result.isDirectory) {
+      if (result.allowed && result.exists && result.isDirectory && !result.errorCode) {
         setNewName("");
         await loadDirectory(parentPath, { modalEpoch: capturedEpoch });
         if (createSeq !== createSequenceRef.current || capturedEpoch !== modalEpochRef.current) return;

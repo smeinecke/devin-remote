@@ -456,7 +456,7 @@ export async function handleApi(
       const name = String(body.name ?? "");
       const roots = getAllowedRoots(ctx.primaryCwd, ctx.store);
       const result = await createDirectory(parentPath, name, roots);
-      return json(res, result.exists && result.isDirectory && result.allowed ? 200 : httpStatusForErrorCode(result.errorCode), result);
+      return json(res, result.allowed && result.exists && result.isDirectory && !result.errorCode ? 200 : httpStatusForErrorCode(result.errorCode), result);
     }
 
     json(res, 404, { error: `not found: ${m} ${url.pathname}` });

@@ -640,7 +640,7 @@ export function validationErrorMessage(code: string): string {
     case "NOT_A_DIRECTORY":
       return "Not a directory.";
     case "PATH_ALREADY_EXISTS":
-      return "A file or folder with that name already exists.";
+      return "A folder with this name already exists.";
     case "OUTSIDE_ALLOWED_ROOT":
       return "Outside allowed workspace roots.";
     case "PERMISSION_DENIED":

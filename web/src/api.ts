@@ -28,22 +28,48 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isFilesystemPayload(value: unknown): value is { allowed?: boolean; errorCode?: string } {
-  return isObject(value) && (typeof value.allowed === "boolean" || typeof value.errorCode === "string");
+export function isDirectoryListingResponse(value: unknown): value is DirectoryListingResponse {
+  return (
+    isObject(value) &&
+    typeof value.path === "string" &&
+    (typeof value.parent === "string" || value.parent === null) &&
+    isObject(value.root) &&
+    typeof (value.root as Record<string, unknown>).path === "string" &&
+    typeof (value.root as Record<string, unknown>).label === "string" &&
+    Array.isArray(value.breadcrumbs) &&
+    Array.isArray(value.entries) &&
+    typeof value.allowed === "boolean" &&
+    typeof value.writable === "boolean"
+  );
+}
+
+export function isDirectoryValidationResponse(value: unknown): value is DirectoryValidationResponse {
+  return (
+    isObject(value) &&
+    typeof value.input === "string" &&
+    (typeof value.resolvedPath === "string" || value.resolvedPath === null) &&
+    typeof value.exists === "boolean" &&
+    typeof value.isDirectory === "boolean" &&
+    typeof value.readable === "boolean" &&
+    typeof value.writable === "boolean" &&
+    typeof value.allowed === "boolean" &&
+    typeof value.gitRepository === "boolean" &&
+    (typeof value.branch === "string" || value.branch === null)
+  );
 }
 
 export function directoryListingFromError(error: unknown): DirectoryListingResponse | null {
   if (!(error instanceof ApiResponseError)) return null;
   const payload = error.payload;
-  if (!isFilesystemPayload(payload)) return null;
-  return (payload as DirectoryListingResponse) ?? null;
+  if (!isDirectoryListingResponse(payload)) return null;
+  return payload;
 }
 
 export function directoryValidationFromError(error: unknown): DirectoryValidationResponse | null {
   if (!(error instanceof ApiResponseError)) return null;
   const payload = error.payload;
-  if (!isFilesystemPayload(payload)) return null;
-  return (payload as DirectoryValidationResponse) ?? null;
+  if (!isDirectoryValidationResponse(payload)) return null;
+  return payload;
 }
 
 async function req<T>(method: string, url: string, body?: unknown): Promise<T> {

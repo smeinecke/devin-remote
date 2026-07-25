@@ -110,7 +110,7 @@ const HOME = os.homedir();
 
 export function getAllowedRoots(
   primaryCwd: string,
-  store: Store,
+  _store: Store,
   env: NodeJS.ProcessEnv = process.env,
 ): string[] {
   const configured = (env.DEVIN_REMOTE_WORKSPACE_ROOTS ?? "")
@@ -120,12 +120,7 @@ export function getAllowedRoots(
 
   if (configured.length > 0) return configured;
 
-  const roots = new Set<string>();
-  roots.add(primaryCwd);
-  for (const w of store.workspaces()) {
-    if (w) roots.add(w);
-  }
-  return [...roots];
+  return [primaryCwd];
 }
 
 function hasNullBytes(input: string): boolean {
@@ -382,6 +377,21 @@ async function resolveAndCheck(
   }
 
   const readable = isDirectory ? await accessRead(canonical) : false;
+  if (exists && isDirectory && !readable) {
+    return {
+      input,
+      resolvedPath: canonical,
+      exists: true,
+      isDirectory: true,
+      readable: false,
+      writable: false,
+      allowed: false,
+      gitRepository: false,
+      branch: null,
+      errorCode: "PERMISSION_DENIED",
+    };
+  }
+
   const writable = isDirectory ? await accessWrite(canonical) : false;
   const { repository: gitRepository, branch } =
     options.includeGit && exists && isDirectory
@@ -404,9 +414,13 @@ async function resolveAndCheck(
 export async function validateDirectory(
   input: string,
   roots: string[],
-  options: { includeGit?: boolean } = {},
+  options: { includeGit?: boolean; mustExist?: boolean } = {},
 ): Promise<DirectoryValidationResponse> {
-  return resolveAndCheck(input, roots, { ...options, mustExist: false, mustBeDirectory: false });
+  return resolveAndCheck(input, roots, {
+    includeGit: options.includeGit,
+    mustExist: options.mustExist ?? true,
+    mustBeDirectory: true,
+  });
 }
 
 export async function listDirectories(
@@ -533,7 +547,7 @@ export async function createDirectory(
     includeGit: false,
   });
 
-  if (!parentValidation.allowed || !parentValidation.exists || !parentValidation.isDirectory || !parentValidation.resolvedPath || !parentValidation.writable) {
+  if (!parentValidation.allowed || !parentValidation.exists || !parentValidation.isDirectory || !parentValidation.resolvedPath) {
     return {
       input: parentPath,
       resolvedPath: parentValidation.resolvedPath,
@@ -548,45 +562,31 @@ export async function createDirectory(
     };
   }
 
+  if (!parentValidation.writable) {
+    return {
+      input: parentPath,
+      resolvedPath: parentValidation.resolvedPath,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      allowed: false,
+      gitRepository: false,
+      branch: null,
+      errorCode: "PERMISSION_DENIED",
+    };
+  }
+
   const target = path.join(parentValidation.resolvedPath, name);
   let created = false;
 
   try {
-    try {
-      const existing = await fs.realpath(target);
-      const existingValidation = await validateDirectory(existing, roots, { includeGit: options.includeGit ?? false });
-      if (!existingValidation.allowed) {
-        return {
-          input: parentPath,
-          resolvedPath: existing,
-          exists: existingValidation.exists,
-          isDirectory: existingValidation.isDirectory,
-          readable: false,
-          writable: false,
-          allowed: false,
-          gitRepository: false,
-          branch: null,
-          errorCode: existingValidation.errorCode ?? "OUTSIDE_ALLOWED_ROOT",
-        };
+    const preValidation = await validateDirectory(target, roots, { includeGit: options.includeGit ?? false });
+    if (preValidation.errorCode !== "PATH_NOT_FOUND") {
+      if (!preValidation.allowed) {
+        return { ...preValidation, input: parentPath };
       }
-      if (existingValidation.exists && existingValidation.isDirectory) {
-        return existingValidation;
-      }
-      return {
-        input: parentPath,
-        resolvedPath: existing,
-        exists: true,
-        isDirectory: false,
-        readable: false,
-        writable: false,
-        allowed: true,
-        gitRepository: false,
-        branch: null,
-        errorCode: "PATH_ALREADY_EXISTS",
-      };
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") throw err;
+      return { ...preValidation, input: parentPath, errorCode: "PATH_ALREADY_EXISTS" };
     }
 
     await fs.mkdir(target);
@@ -611,9 +611,23 @@ export async function createDirectory(
       };
     }
 
-    return result;
+    return { ...result, input: parentPath };
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") {
+      return {
+        input: parentPath,
+        resolvedPath: target,
+        exists: true,
+        isDirectory: false,
+        readable: false,
+        writable: false,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+        errorCode: "PATH_ALREADY_EXISTS",
+      };
+    }
     return {
       input: parentPath,
       resolvedPath: target,
@@ -624,12 +638,7 @@ export async function createDirectory(
       allowed: false,
       gitRepository: false,
       branch: null,
-      errorCode:
-        code === "EACCES" || code === "EPERM"
-          ? "PERMISSION_DENIED"
-          : code === "EEXIST"
-            ? "PATH_ALREADY_EXISTS"
-            : "IO_ERROR",
+      errorCode: code === "EACCES" || code === "EPERM" ? "PERMISSION_DENIED" : "IO_ERROR",
     };
   }
 }
@@ -680,6 +689,21 @@ async function canonicalRecentPath(
   return v.resolvedPath;
 }
 
+async function canonicalizeStoredPath(raw: string): Promise<string | null> {
+  if (!raw) return null;
+  const resolved = path.resolve(raw);
+  try {
+    const stat = await fs.stat(resolved);
+    if (!stat.isDirectory()) return null;
+    return await canonicalPath(resolved);
+  } catch {
+    // Drop stale or missing entries. Existing directories outside the current
+    // trusted roots are still retained so they can reappear when their root is
+    // added back, but missing paths are not useful to keep.
+    return null;
+  }
+}
+
 export async function listRecentWorkspaces(
   primaryCwd: string,
   store: Store,
@@ -696,20 +720,25 @@ export async function listRecentWorkspaces(
     recent.push(canonical);
   }
 
-  // Canonicalise the stored MRU list with bounded concurrency and persist the cleaned version.
+  // Canonicalise the stored MRU list for deduplication, but do not drop legacy
+  // entries that happen to be outside the current trusted roots. They remain in
+  // the store and will reappear in the picker if the user adds their root.
   const rawWorkspaces = store.workspaces();
-  const cleanedCandidates = await mapWithLimit(rawWorkspaces, 4, (w) => canonicalRecentPath(w, roots));
-  const cleaned: string[] = [];
-  for (const canonical of cleanedCandidates) {
-    if (!canonical || cleaned.includes(canonical)) continue;
-    cleaned.push(canonical);
+  const storedCandidates = await mapWithLimit(rawWorkspaces, 4, canonicalizeStoredPath);
+  const canonicalWorkspaces: string[] = [];
+  for (const canonical of storedCandidates) {
+    if (!canonical || canonicalWorkspaces.includes(canonical)) continue;
+    canonicalWorkspaces.push(canonical);
   }
-  if (!arraysEqual(rawWorkspaces, cleaned)) {
-    store.setWorkspaces(cleaned);
+  if (!arraysEqual(rawWorkspaces, canonicalWorkspaces)) {
+    store.setWorkspaces(canonicalWorkspaces);
   }
 
+  // The picker only surfaces paths that are inside the trusted roots.
   addCanonical(await canonicalRecentPath(primaryCwd, roots));
-  for (const w of cleaned) addCanonical(w);
+  for (const w of canonicalWorkspaces) {
+    addCanonical(await canonicalRecentPath(w, roots));
+  }
 
   const sessions = Object.values(store.sessions()).sort((a, b) =>
     (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""),

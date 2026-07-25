@@ -3,7 +3,7 @@ import { render, screen, waitFor, cleanup, fireEvent, within } from "@testing-li
 import { useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import DirectoryPickerModal from "./DirectoryPickerModal";
-import { api } from "../api";
+import { api, ApiResponseError } from "../api";
 import type { DirectoryListingResponse, FilesystemRoot } from "../types";
 
 const HOME = process.env.HOME ?? "/tmp";
@@ -777,5 +777,155 @@ describe("DirectoryPickerModal", () => {
     fireEvent.click(screen.getByText("projects"));
     await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
     expect(listSpy).toHaveBeenLastCalledWith(`${HOME}/projects`, false);
+  });
+
+  it("shows a conflict message and keeps the new-folder name when the target already exists", async () => {
+    createSpy.mockRejectedValueOnce(
+      new ApiResponseError("Conflict", 409, {
+        input: `${HOME}`,
+        resolvedPath: `${HOME}/existing`,
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+        errorCode: "PATH_ALREADY_EXISTS",
+      }),
+    );
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.queryByText("Loading directories…")).toBeNull());
+
+    const input = screen.getByPlaceholderText("New folder");
+    fireEvent.change(input, { target: { value: "existing" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create folder/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("A folder with this name already exists.")).not.toBeNull();
+    });
+
+    expect((input as HTMLInputElement).value).toBe("existing");
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not clear the new-folder form on a PATH_ALREADY_EXISTS conflict", async () => {
+    createSpy.mockRejectedValueOnce(
+      new ApiResponseError("Conflict", 409, {
+        input: `${HOME}`,
+        resolvedPath: `${HOME}/dupe`,
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+        errorCode: "PATH_ALREADY_EXISTS",
+      }),
+    );
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.queryByText("Loading directories…")).toBeNull());
+
+    const input = screen.getByPlaceholderText("New folder");
+    fireEvent.change(input, { target: { value: "dupe" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create folder/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("A folder with this name already exists.")).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Create folder/i }));
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(createSpy).toHaveBeenLastCalledWith({ parentPath: `${HOME}`, name: "dupe" });
+  });
+
+  it("keeps the current listing visible after a create-directory conflict", async () => {
+    createSpy.mockRejectedValueOnce(
+      new ApiResponseError("Conflict", 409, {
+        input: `${HOME}`,
+        resolvedPath: `${HOME}/projects`,
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+        errorCode: "PATH_ALREADY_EXISTS",
+      }),
+    );
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.getByText("projects")).not.toBeNull());
+
+    const input = screen.getByPlaceholderText("New folder");
+    fireEvent.change(input, { target: { value: "projects" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create folder/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("A folder with this name already exists.")).not.toBeNull();
+    });
+
+    expect(screen.getByText("projects")).not.toBeNull();
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports symlink-escape creation errors distinctly from conflicts", async () => {
+    createSpy.mockRejectedValueOnce(
+      new ApiResponseError("Forbidden", 403, {
+        input: `${HOME}`,
+        resolvedPath: null,
+        exists: false,
+        isDirectory: false,
+        readable: false,
+        writable: false,
+        allowed: false,
+        gitRepository: false,
+        branch: null,
+        errorCode: "SYMLINK_ESCAPE",
+      }),
+    );
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.queryByText("Loading directories…")).toBeNull());
+
+    const input = screen.getByPlaceholderText("New folder");
+    fireEvent.change(input, { target: { value: "escape" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create folder/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Symlink escapes workspace roots.")).not.toBeNull();
+    });
+  });
+
+  it("reports an outside-root creation error distinctly from conflicts", async () => {
+    createSpy.mockRejectedValueOnce(
+      new ApiResponseError("Forbidden", 403, {
+        input: `${HOME}`,
+        resolvedPath: null,
+        exists: false,
+        isDirectory: false,
+        readable: false,
+        writable: false,
+        allowed: false,
+        gitRepository: false,
+        branch: null,
+        errorCode: "OUTSIDE_ALLOWED_ROOT",
+      }),
+    );
+
+    render(<TestWrapper initialPath={`${HOME}`} />);
+    await waitFor(() => expect(screen.queryByText("Loading directories…")).toBeNull());
+
+    const input = screen.getByPlaceholderText("New folder");
+    fireEvent.change(input, { target: { value: "outside" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create folder/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Outside allowed workspace roots.")).not.toBeNull();
+    });
   });
 });

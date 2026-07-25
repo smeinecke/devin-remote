@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { api, ApiResponseError, directoryListingFromError, directoryValidationFromError, isFilesystemPayload } from "./api";
+import {
+  api,
+  ApiResponseError,
+  directoryListingFromError,
+  directoryValidationFromError,
+  isDirectoryListingResponse,
+  isDirectoryValidationResponse,
+} from "./api";
 
 class FakeResponse {
   ok = false;
@@ -100,12 +107,143 @@ describe("api request helper", () => {
     });
   });
 
-  it("identifies filesystem payloads and rejects unrelated objects", () => {
-    expect(isFilesystemPayload({ allowed: false, errorCode: "OUTSIDE_ALLOWED_ROOT" })).toBe(true);
-    expect(isFilesystemPayload({ allowed: true, entries: [] })).toBe(true);
-    expect(isFilesystemPayload({ error: "boom" })).toBe(false);
-    expect(isFilesystemPayload(null)).toBe(false);
-    expect(isFilesystemPayload([1, 2, 3])).toBe(false);
+  it("rejects a validation payload when asked for a listing", () => {
+    const payload: any = {
+      input: "/workspace",
+      resolvedPath: null,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      allowed: false,
+      gitRepository: false,
+      branch: null,
+      errorCode: "PATH_NOT_FOUND",
+    };
+    const err = new ApiResponseError("Not found", 404, payload);
+    expect(directoryListingFromError(err)).toBeNull();
+    expect(directoryValidationFromError(err)?.errorCode).toBe("PATH_NOT_FOUND");
+  });
+
+  it("rejects a listing payload when asked for a validation", () => {
+    const payload: any = {
+      path: "/workspace",
+      parent: null,
+      root: { path: "/workspace", label: "workspace" },
+      breadcrumbs: [],
+      entries: [],
+      allowed: false,
+      writable: false,
+      errorCode: "OUTSIDE_ALLOWED_ROOT",
+    };
+    const err = new ApiResponseError("Forbidden", 403, payload);
+    expect(directoryValidationFromError(err)).toBeNull();
+    expect(directoryListingFromError(err)?.errorCode).toBe("OUTSIDE_ALLOWED_ROOT");
+  });
+
+  it("rejects unrelated objects and arrays for both guard types", () => {
+    expect(isDirectoryListingResponse({ error: "boom" })).toBe(false);
+    expect(isDirectoryListingResponse(null)).toBe(false);
+    expect(isDirectoryListingResponse([1, 2, 3])).toBe(false);
+    expect(isDirectoryValidationResponse({ error: "boom" })).toBe(false);
+    expect(isDirectoryValidationResponse(null)).toBe(false);
+    expect(isDirectoryValidationResponse([1, 2, 3])).toBe(false);
+  });
+
+  it("requires every listing field in the listing guard", () => {
+    expect(
+      isDirectoryListingResponse({
+        path: "/workspace",
+        parent: null,
+        root: { path: "/workspace", label: "workspace" },
+        breadcrumbs: [],
+        entries: [],
+        allowed: true,
+        writable: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      isDirectoryListingResponse({
+        path: "/workspace",
+        allowed: true,
+        writable: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("requires every validation field in the validation guard", () => {
+    expect(
+      isDirectoryValidationResponse({
+        input: "/workspace",
+        resolvedPath: "/workspace",
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+      }),
+    ).toBe(true);
+
+    expect(
+      isDirectoryValidationResponse({
+        input: "/workspace",
+        allowed: true,
+        errorCode: "PATH_NOT_FOUND",
+      }),
+    ).toBe(false);
+  });
+
+  it("preserves PATH_ALREADY_EXISTS through a 409", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(false, 409, {
+        input: "/workspace",
+        resolvedPath: "/workspace/existing",
+        exists: true,
+        isDirectory: true,
+        readable: true,
+        writable: true,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+        errorCode: "PATH_ALREADY_EXISTS",
+      }) as unknown as Response,
+    );
+
+    await expect(api.createDirectory({ parentPath: "/workspace", name: "existing" })).rejects.toSatisfy(
+      (err: unknown) => {
+        if (!(err instanceof ApiResponseError)) return false;
+        expect(err.status).toBe(409);
+        expect(directoryValidationFromError(err)?.errorCode).toBe("PATH_ALREADY_EXISTS");
+        return true;
+      },
+    );
+  });
+
+  it("preserves PATH_NOT_FOUND through a 404", async () => {
+    (fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
+      new FakeResponse(false, 404, {
+        input: "/workspace/missing",
+        resolvedPath: null,
+        exists: false,
+        isDirectory: false,
+        readable: false,
+        writable: false,
+        allowed: true,
+        gitRepository: false,
+        branch: null,
+        errorCode: "PATH_NOT_FOUND",
+      }) as unknown as Response,
+    );
+
+    await expect(api.validateDirectory("/workspace/missing")).rejects.toSatisfy((err: unknown) => {
+      if (!(err instanceof ApiResponseError)) return false;
+      expect(err.status).toBe(404);
+      expect(directoryValidationFromError(err)?.errorCode).toBe("PATH_NOT_FOUND");
+      return true;
+    });
   });
 
   it("extracts a DirectoryListingResponse from an ApiResponseError", () => {

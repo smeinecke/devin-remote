@@ -262,4 +262,131 @@ describe("WorkspacePathField", () => {
       expect(screen.getByText("!")).not.toBeNull();
     });
   });
+
+  it("coalesces Enter followed by blur into a single validation request", async () => {
+    render(<Wrapper value="/workspace" />);
+
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledTimes(1));
+
+    fireEvent.blur(input);
+    await waitFor(() => expect(screen.queryByText("Validating…")).toBeNull());
+
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one request for two immediate validations of the same input", async () => {
+    render(<Wrapper value="/workspace" />);
+
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.blur(input);
+
+    await waitFor(() => expect(screen.queryByText("Validating…")).toBeNull());
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a replacement request when the input changes and ignores stale responses", async () => {
+    let resolveFirst: (value: any) => void = () => {};
+    let resolveSecond: (value: any) => void = () => {};
+    const onValidationChange = vi.fn();
+
+    validateSpy.mockImplementation((path: string) =>
+      new Promise((resolve) => {
+        if (path === "/first") resolveFirst = resolve;
+        else resolveSecond = resolve;
+      }),
+    );
+
+    render(<Wrapper value="/first" onValidationChange={onValidationChange} />);
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/first"));
+
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "/second" } });
+    await waitFor(() => expect(validateSpy).toHaveBeenCalledWith("/second"));
+
+    expect(validateSpy).toHaveBeenCalledTimes(2);
+
+    resolveFirst({
+      input: "/first",
+      resolvedPath: "/first",
+      exists: true,
+      isDirectory: true,
+      readable: true,
+      writable: true,
+      allowed: true,
+      gitRepository: false,
+      branch: null,
+    });
+
+    resolveSecond({
+      input: "/second",
+      resolvedPath: "/second",
+      exists: true,
+      isDirectory: true,
+      readable: true,
+      writable: true,
+      allowed: true,
+      gitRepository: false,
+      branch: null,
+    });
+
+    await waitFor(() => {
+      expect(onValidationChange).toHaveBeenLastCalledWith(expect.objectContaining({ input: "/second" }));
+    });
+
+    const calls = onValidationChange.mock.calls.map((c) => c[0]?.input);
+    expect(calls).not.toContain("/first");
+  });
+
+  it("displays the path-not-found message for a missing directory", async () => {
+    validateSpy.mockResolvedValue({
+      input: "/missing",
+      resolvedPath: null,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      allowed: true,
+      gitRepository: false,
+      branch: null,
+      errorCode: "PATH_NOT_FOUND",
+    });
+
+    render(<Wrapper value="/missing" />);
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("Directory does not exist.")).not.toBeNull();
+      expect(screen.getByText("!")).not.toBeNull();
+    });
+  });
+
+  it("does not enable creation for a missing workspace", async () => {
+    validateSpy.mockResolvedValue({
+      input: "/missing",
+      resolvedPath: null,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      allowed: true,
+      gitRepository: false,
+      branch: null,
+      errorCode: "PATH_NOT_FOUND",
+    });
+
+    render(<Wrapper value="/missing" />);
+    const input = screen.getByLabelText("Workspace path") as HTMLInputElement;
+    fireEvent.blur(input);
+
+    await waitFor(() => {
+      expect(screen.getByText("!")).not.toBeNull();
+    });
+
+    expect(screen.queryByText("✓")).toBeNull();
+  });
 });

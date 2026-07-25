@@ -224,10 +224,17 @@ describe("filesystem API", () => {
     assert.deepStrictEqual(roots, ["/a", "/b"]);
   });
 
-  it("falls back to primary cwd and stored workspaces when env is empty", () => {
+  it("falls back to primary cwd only when env is empty", () => {
     const store = fakeStore(["/w1"]);
     const roots = getAllowedRoots("/primary", store, {});
-    assert.deepStrictEqual(roots, ["/primary", "/w1"]);
+    assert.deepStrictEqual(roots, ["/primary"]);
+  });
+
+  it("does not let stored workspaces expand the allowed-root boundary", () => {
+    const store = fakeStore(["/outside"]);
+    const roots = getAllowedRoots("/primary", store, {});
+    assert.deepStrictEqual(roots, ["/primary"]);
+    assert.ok(!roots.includes("/outside"));
   });
 
   it("lists only existing, readable, canonical roots and deduplicates", async () => {
@@ -239,11 +246,10 @@ describe("filesystem API", () => {
     await fs.writeFile(file, "x");
 
     try {
-      const store = fakeStore([linkToA, a, missing, file]);
-      // Use a nonexistent primary cwd so the only configured roots are the
-      // workspace list, which should collapse to one canonical root.
+      const store = fakeStore([]);
       const primaryCwd = path.join(dirs.tmp, "primary-missing");
-      const roots = await listRoots(primaryCwd, store, {});
+      const env = { DEVIN_REMOTE_WORKSPACE_ROOTS: `${linkToA},${a},${missing},${file}` };
+      const roots = await listRoots(primaryCwd, store, env);
       const paths = roots.map((r) => r.path);
       assert.strictEqual(paths.length, 1);
       assert.ok(paths[0].startsWith(a), `expected canonical path for ${a}, got ${paths[0]}`);
@@ -343,7 +349,8 @@ describe("filesystem API", () => {
       setWorkspaces: (w: string[]) => setWorkspaces.push(...w),
     } as any;
 
-    const recent = await listRecentWorkspaces(primary, store, { DEVIN_REMOTE_WORKSPACE_ROOTS: "" });
+    const env = { DEVIN_REMOTE_WORKSPACE_ROOTS: `${dirs.root},${primary}` };
+    const recent = await listRecentWorkspaces(primary, store, env);
     assert.deepStrictEqual(recent, [primary, base]);
     assert.deepStrictEqual(setWorkspaces, [base, primary]);
   });
@@ -424,7 +431,124 @@ describe("filesystem API", () => {
       setWorkspaces: () => {},
     } as any;
 
-    const recent = await listRecentWorkspaces(primary, store, { DEVIN_REMOTE_WORKSPACE_ROOTS: "" });
+    const env = { DEVIN_REMOTE_WORKSPACE_ROOTS: `${dirs.root},${primary}` };
+    const recent = await listRecentWorkspaces(primary, store, env);
     assert.deepStrictEqual(recent, [primary, base]);
+  });
+
+  it("validateDirectory returns PATH_NOT_FOUND for a missing path inside a root", async () => {
+    const missing = path.join(dirs.root, "does-not-exist");
+    const v = await validateDirectory(missing, roots);
+    assert.strictEqual(v.allowed, true);
+    assert.strictEqual(v.exists, false);
+    assert.strictEqual(v.isDirectory, false);
+    assert.strictEqual(v.errorCode, "PATH_NOT_FOUND");
+  });
+
+  it("validateDirectory returns NOT_A_DIRECTORY for an existing file", async () => {
+    const file = path.join(dirs.root, "readme.txt");
+    const v = await validateDirectory(file, roots);
+    assert.strictEqual(v.allowed, true);
+    assert.strictEqual(v.exists, true);
+    assert.strictEqual(v.isDirectory, false);
+    assert.strictEqual(v.errorCode, "NOT_A_DIRECTORY");
+  });
+
+  it("createDirectory returns PATH_ALREADY_EXISTS for an existing directory", async () => {
+    const existing = path.join(dirs.root, "shared");
+    const result = await createDirectory(dirs.root, "shared", roots);
+    assert.strictEqual(result.allowed, true);
+    assert.strictEqual(result.exists, true);
+    assert.strictEqual(result.isDirectory, true);
+    assert.strictEqual(result.errorCode, "PATH_ALREADY_EXISTS");
+  });
+
+  it("createDirectory returns PATH_ALREADY_EXISTS for an existing file", async () => {
+    await fs.writeFile(path.join(dirs.root, "new-file"), "x");
+    try {
+      const result = await createDirectory(dirs.root, "new-file", roots);
+      assert.strictEqual(result.allowed, true);
+      assert.strictEqual(result.exists, true);
+      assert.strictEqual(result.isDirectory, false);
+      assert.strictEqual(result.errorCode, "PATH_ALREADY_EXISTS");
+    } finally {
+      await fs.rm(path.join(dirs.root, "new-file"), { force: true });
+    }
+  });
+
+  it("createDirectory returns PATH_ALREADY_EXISTS for a symlink to an existing directory", async () => {
+    const existing = path.join(dirs.root, "shared");
+    const link = path.join(dirs.root, "shared-link");
+    await fs.symlink(existing, link, "dir");
+    try {
+      const result = await createDirectory(dirs.root, "shared-link", roots);
+      assert.strictEqual(result.allowed, true);
+      assert.strictEqual(result.exists, true);
+      assert.strictEqual(result.isDirectory, true);
+      assert.strictEqual(result.errorCode, "PATH_ALREADY_EXISTS");
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("createDirectory preserves SYMLINK_ESCAPE for an existing symlink that escapes", async () => {
+    const link = path.join(dirs.root, "escape-to-outside");
+    await fs.symlink(dirs.outside, link, "dir");
+    try {
+      const result = await createDirectory(dirs.root, "escape-to-outside", roots);
+      assert.strictEqual(result.allowed, false);
+      assert.ok(
+        result.errorCode === "SYMLINK_ESCAPE" || result.errorCode === "OUTSIDE_ALLOWED_ROOT",
+        `unexpected error code: ${result.errorCode}`,
+      );
+    } finally {
+      await fs.rm(link, { force: true });
+    }
+  });
+
+  it("recent paths outside trusted roots do not become trusted roots", () => {
+    const store = fakeStore([dirs.outside]);
+    const roots = getAllowedRoots(dirs.root, store, {});
+    assert.deepStrictEqual(roots, [dirs.root]);
+    assert.ok(!roots.includes(dirs.outside));
+  });
+
+  it("changing configured roots removes incompatible recent entries from the picker", async () => {
+    const primary = path.join(dirs.tmp, "primary");
+    const inside = path.join(dirs.root, "inside");
+    await fs.mkdir(primary, { recursive: true });
+    await fs.mkdir(inside, { recursive: true });
+
+    const store = {
+      workspaces: () => [inside, primary],
+      sessions: () => ({}),
+      setWorkspaces: () => {},
+    } as any;
+
+    // When only primary is trusted, the entry inside dirs.root is omitted.
+    const recentPrimaryOnly = await listRecentWorkspaces(primary, store, {});
+    assert.deepStrictEqual(recentPrimaryOnly, [primary]);
+
+    // Adding dirs.root as an explicit root restores the other entry.
+    const recentBoth = await listRecentWorkspaces(primary, store, {
+      DEVIN_REMOTE_WORKSPACE_ROOTS: `${primary},${dirs.root}`,
+    });
+    assert.deepStrictEqual(recentBoth, [primary, inside]);
+  });
+
+  it("legacy store entries cannot expand browsing scope", async () => {
+    const outside = path.join(dirs.tmp, "outside-workspace");
+    await fs.mkdir(outside, { recursive: true });
+
+    const store = {
+      workspaces: () => [outside],
+      sessions: () => ({}),
+      setWorkspaces: (w: string[]) => {},
+    } as any;
+
+    const roots = getAllowedRoots(dirs.root, store, {});
+    const listing = await listDirectories(outside, roots);
+    assert.strictEqual(listing.allowed, false);
+    assert.ok(listing.errorCode === "OUTSIDE_ALLOWED_ROOT" || listing.errorCode === "SYMLINK_ESCAPE");
   });
 });

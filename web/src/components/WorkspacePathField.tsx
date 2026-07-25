@@ -8,6 +8,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import DirectoryPickerModal from "./DirectoryPickerModal";
 import { CheckIcon, ChevronDownIcon, FolderSearchIcon, Loader2Icon, XIcon } from "lucide-react";
 
+const DEFAULT_INVALID: DirectoryValidationResponse = {
+  input: "",
+  resolvedPath: null,
+  exists: false,
+  isDirectory: false,
+  readable: false,
+  writable: false,
+  allowed: false,
+  gitRepository: false,
+  branch: null,
+  errorCode: "IO_ERROR",
+};
+
 export interface WorkspacePathFieldProps {
   value: string;
   onChange: (value: string) => void;
@@ -43,9 +56,12 @@ export default function WorkspacePathField({
   const browseButtonRef = useRef<HTMLButtonElement>(null);
   const wasPickerOpenRef = useRef(false);
   const lastValidatedInputRef = useRef<string | null>(null);
-  const activeValidationInputRef = useRef<string | null>(null);
   const validationRef = useRef(validation);
-  const validatingRef = useRef(validating);
+  const activeValidationRef = useRef<{
+    input: string;
+    sequence: number;
+    promise: Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     valueRef.current = value;
@@ -54,10 +70,6 @@ export default function WorkspacePathField({
   useEffect(() => {
     validationRef.current = validation;
   }, [validation]);
-
-  useEffect(() => {
-    validatingRef.current = validating;
-  }, [validating]);
 
   // Default the input to the primary cwd when the field is empty on first render.
   useEffect(() => {
@@ -80,55 +92,63 @@ export default function WorkspacePathField({
   );
 
   const runValidate = useCallback(
-    async (path: string) => {
-      const inputAtStart = path;
-      const seq = ++validationSeq.current;
+    async (input: string, options?: { force?: boolean }) => {
+      const normalizedInput = input;
 
-      if (inputAtStart === activeValidationInputRef.current && validatingRef.current) return;
+      const active = activeValidationRef.current;
       if (
-        inputAtStart === lastValidatedInputRef.current &&
-        inputAtStart === valueRef.current &&
-        validationRef.current?.input === inputAtStart
+        !options?.force &&
+        active &&
+        active.input === normalizedInput &&
+        normalizedInput === valueRef.current
+      ) {
+        return active.promise;
+      }
+
+      if (
+        !options?.force &&
+        lastValidatedInputRef.current === normalizedInput &&
+        validationRef.current?.input === normalizedInput
       ) {
         return;
       }
 
-      if (!inputAtStart.trim()) {
-        if (seq !== validationSeq.current) return;
+      const sequence = ++validationSeq.current;
+
+      if (!normalizedInput.trim()) {
+        if (sequence !== validationSeq.current) return;
         setValidating(false);
-        applyValidation(null, inputAtStart);
+        applyValidation(null, normalizedInput);
         return;
       }
 
-      activeValidationInputRef.current = inputAtStart;
-      setValidating(true);
-      try {
-        const result = await api.validateDirectory(inputAtStart);
-        if (seq !== validationSeq.current) return;
-        applyValidation(result, inputAtStart);
-      } catch (err) {
-        if (seq !== validationSeq.current) return;
-        const payload = directoryValidationFromError(err);
-        const result: DirectoryValidationResponse =
-          payload ?? {
-            input: inputAtStart,
-            resolvedPath: null,
-            exists: false,
-            isDirectory: false,
-            readable: false,
-            writable: false,
-            allowed: false,
-            gitRepository: false,
-            branch: null,
-            errorCode: "IO_ERROR",
+      const perform = async () => {
+        setValidating(true);
+        try {
+          const result = await api.validateDirectory(normalizedInput);
+          if (sequence !== validationSeq.current) return;
+          applyValidation(result, normalizedInput);
+        } catch (err) {
+          if (sequence !== validationSeq.current) return;
+          const payload = directoryValidationFromError(err);
+          const result: DirectoryValidationResponse = payload ?? {
+            ...DEFAULT_INVALID,
+            input: normalizedInput,
           };
-        applyValidation(result, inputAtStart);
-      } finally {
-        if (seq === validationSeq.current) {
-          setValidating(false);
-          activeValidationInputRef.current = null;
+          applyValidation(result, normalizedInput);
+        } finally {
+          if (activeValidationRef.current?.sequence === sequence) {
+            activeValidationRef.current = null;
+          }
+          if (validationSeq.current === sequence) {
+            setValidating(false);
+          }
         }
-      }
+      };
+
+      const promise = perform();
+      activeValidationRef.current = { input: normalizedInput, sequence, promise };
+      return promise;
     },
     [applyValidation],
   );
@@ -138,17 +158,26 @@ export default function WorkspacePathField({
       clearTimeout(debounceRef.current);
       debounceRef.current = null;
     }
-    valueRef.current = path;
-    lastValidatedInputRef.current = null;
-    activeValidationInputRef.current = null;
-    ++validationSeq.current;
-    setValidation(null);
-    onValidationChange?.(null);
+
+    if (validationRef.current && validationRef.current.input !== path) {
+      setValidation(null);
+      onValidationChange?.(null);
+    }
+
+    if (!path.trim()) {
+      setValidating(false);
+      return;
+    }
+
     void runValidate(path);
   }
 
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+
     setValidation((prev) => (prev && prev.input !== valueRef.current ? null : prev));
 
     const current = valueRef.current;
@@ -157,7 +186,8 @@ export default function WorkspacePathField({
       setValidation(null);
       return;
     }
-    if (activeValidationInputRef.current === current) return;
+
+    if (activeValidationRef.current?.input === current) return;
     if (lastValidatedInputRef.current === current && validationRef.current?.input === current) {
       setValidating(false);
       return;
@@ -167,6 +197,7 @@ export default function WorkspacePathField({
     debounceRef.current = setTimeout(() => {
       void runValidate(current);
     }, 300);
+
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -230,18 +261,20 @@ export default function WorkspacePathField({
 
   const handleBlur = () => {
     setTouched(true);
-    validateImmediately(value);
+    validateImmediately(valueRef.current);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = e.target.value;
+    if (next === valueRef.current) return;
     valueRef.current = next;
     onChange(next);
     setTouched(false);
-    // A new value immediately invalidates any previous validation.
     ++validationSeq.current;
     lastValidatedInputRef.current = null;
-    activeValidationInputRef.current = null;
+    if (activeValidationRef.current && activeValidationRef.current.input !== next) {
+      activeValidationRef.current = null;
+    }
     setValidation(null);
     onValidationChange?.(null);
   };
@@ -264,7 +297,7 @@ export default function WorkspacePathField({
               if (e.key === "Enter") {
                 e.preventDefault();
                 setTouched(true);
-                validateImmediately(value);
+                validateImmediately(valueRef.current);
               }
             }}
             placeholder={primaryCwd ?? "/path/to/workspace"}
